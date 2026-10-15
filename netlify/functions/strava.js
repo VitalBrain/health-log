@@ -1,13 +1,15 @@
 // Fonction Netlify : échange et rafraîchit les jetons Strava, relaie la liste d'activités.
 // Variables d'environnement à définir sur Netlify : STRAVA_CLIENT_ID et STRAVA_CLIENT_SECRET.
 exports.handler = async (event) => {
-  const id = process.env.STRAVA_CLIENT_ID, secret = process.env.STRAVA_CLIENT_SECRET;
+  // Les identifiants viennent des variables Netlify si elles existent, sinon de l'app (enregistrés sur ton compte Firebase).
+  const envId = process.env.STRAVA_CLIENT_ID, envSecret = process.env.STRAVA_CLIENT_SECRET;
   const json = (statusCode, body) => ({ statusCode, headers: { "content-type": "application/json", "cache-control": "no-store" }, body: JSON.stringify(body) });
-  if (!id || !secret) return json(500, { error: "missing_env" });
   const q = event.queryStringParameters || {};
-  if (event.httpMethod === "GET" && q.action === "config") return json(200, { clientId: id });
+  if (event.httpMethod === "GET" && q.action === "config") return json(200, { clientId: envId || null, setup: !(envId && envSecret) });
   if (event.httpMethod === "POST") {
     let b = {}; try { b = JSON.parse(event.body || "{}"); } catch (e) {}
+    const id = envId || String(b.client_id || ""), secret = envSecret || String(b.client_secret || "");
+    if (!id || !secret) return json(400, { error: "missing_credentials" });
     const grant = b.action === "exchange" ? { grant_type: "authorization_code", code: b.code }
                 : b.action === "refresh" ? { grant_type: "refresh_token", refresh_token: b.refresh_token } : null;
     if (!grant) return json(400, { error: "bad_request" });

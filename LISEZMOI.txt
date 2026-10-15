@@ -16,19 +16,15 @@ et récupère automatiquement tes activités Garmin via Strava.
           allow read, write: if request.auth != null && request.auth.uid == uid;
         }
 
-2. APPLICATION STRAVA (5 min, gratuit)
-   a. Va sur https://www.strava.com/settings/api et crée une application.
-      - Site web : l'adresse de ton site Netlify
-      - Authorization Callback Domain : le domaine seul, ex. gilded-cucurucho-1204fa.netlify.app
-   b. Note le « Client ID » et le « Client Secret ».
-   c. Vérifie que ta montre est reliée à Strava :
-      Garmin Connect → Paramètres → Applications partenaires → Strava.
+2. STRAVA : RIEN À FAIRE ICI
+   La configuration se fait dans l'app (onglet Activités) : elle ouvre la page Strava API,
+   affiche les valeurs à copier et enregistre ton Client ID / Client Secret sur ton compte.
+   Vérifie seulement que ta montre est reliée à Strava :
+   Garmin Connect → Paramètres → Applications partenaires → Strava.
 
-3. VARIABLES NETLIFY
-   Netlify → ton site → Site configuration → Environment variables → ajoute :
-      STRAVA_CLIENT_ID     = (ton Client ID)
-      STRAVA_CLIENT_SECRET = (ton Client Secret)
-   Le secret reste côté serveur : il n'apparaît jamais dans la page.
+3. VARIABLES NETLIFY : FACULTATIVES
+   Si tu préfères, tu peux mettre STRAVA_CLIENT_ID et STRAVA_CLIENT_SECRET dans
+   Netlify → Site configuration → Environment variables. Elles remplacent alors la saisie dans l'app.
 
 4. DÉPLOIEMENT
    Le glisser-déposer (Netlify Drop ou « Deploys » → déposer un dossier) ne publie pas la fonction

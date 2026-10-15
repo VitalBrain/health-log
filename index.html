@@ -1,4 +1,4 @@
-<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#14263A"><title>Carnet de Forme</title><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script><script src="firebase-config.js"></script><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font-size:14px}img{max-width:100%}[hidden]{display:none!important}</style><style id="app-style">
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#14263A"><title>Carnet de Forme</title><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script><script src="firebase-config.js"></script><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font-size:14px}img{max-width:100%}[hidden]{display:none!important}</style><style id="app-style">
 /* Layout: carnet d'athlète — bandeau de forme en haut, onglets collants, cartes par rôle, chiffres en condensé façon tableau d'affichage de stade */
 :root{
   --paper:#EEF1F4; --card:#FFFFFF; --ink:#111A23; --muted:#5A6672; --line:#D7DDE3; --soft:#F5F7F9;
@@ -146,6 +146,13 @@ details li{margin-bottom:4px}
 a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
 .steps{margin:0;padding-left:20px;font-size:14px;color:var(--muted)}
 .steps li{margin-bottom:3px}
+.setup .step{display:grid;grid-template-columns:26px 1fr;gap:10px;align-items:start}
+.setup .n{width:26px;height:26px;border-radius:50%;background:var(--soft);border:1px solid var(--line);display:grid;place-items:center;font-family:var(--f-display);font-weight:700}
+.kvs{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.kv{display:grid;grid-template-columns:minmax(0,11em) minmax(0,1fr) auto;gap:8px;align-items:center;padding:6px 10px;font-size:13.5px;border-bottom:1px solid var(--line)}
+.kv:last-child{border-bottom:0}
+.kv .k{color:var(--muted)} .kv .v{overflow-wrap:anywhere}
+@media (max-width:520px){.kv{grid-template-columns:1fr auto}.kv .k{grid-column:1/-1}}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--btn);color:var(--btn-ink);padding:10px 16px;border-radius:10px;font-size:14px;z-index:60;max-width:calc(100% - 32px)}
 .empty{padding:18px;text-align:center;color:var(--muted);font-size:14px}
 .loading{padding:40px 0;text-align:center;color:var(--muted)}
@@ -160,6 +167,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
     </div>
     <div class="row">
       <div class="sync" id="sync"><span class="dot wait"></span><span>Connexion…</span></div>
+      <button class="btn small ghost" id="lang-btn" aria-label="Langue / Language">EN</button>
       <button class="btn small" id="fb-login" hidden="">Se connecter</button>
       <button class="btn small" id="install-app" hidden="">Installer l'app</button>
       <button class="btn small" id="dl-app" hidden="">Télécharger l'app</button>
@@ -180,20 +188,32 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
 </div><script>window.__STANDALONE=true;window.__SEED=null;</script><script id="app-script">
 const INITIAL_MARKUP = document.getElementById("app-root").innerHTML;
 /* ============ constantes ============ */
+/* langue : fr / en */
+let LANG = (()=>{ try{ const v=localStorage.getItem("carnet-forme-lang"); if(v==="fr"||v==="en") return v; }catch(e){} return /^fr/i.test(navigator.language||"fr")?"fr":"en"; })();
+const t = (fr,en) => LANG==="en" ? en : fr;
+const DEC = () => LANG==="en" ? "." : ",";
+const mkSport = (fr,en,v,len) => ({get l(){ return t(fr,en); },v,len});
 const SPORTS = {
-  course:{l:"Course à pied",v:"--s-course",len:50},
-  velo:{l:"Vélo",v:"--s-velo",len:90},
-  natation:{l:"Natation",v:"--s-natation",len:45},
-  renfo:{l:"Renfo / calisthénie",v:"--s-renfo",len:50},
-  basket:{l:"Basket",v:"--s-basket",len:75},
-  autre:{l:"Autre",v:"--s-autre",len:45}
+  course:mkSport("Course à pied","Running","--s-course",50),
+  velo:mkSport("Vélo","Cycling","--s-velo",90),
+  natation:mkSport("Natation","Swimming","--s-natation",45),
+  renfo:mkSport("Renfo / calisthénie","Strength / calisthenics","--s-renfo",50),
+  basket:mkSport("Basket","Basketball","--s-basket",75),
+  autre:mkSport("Autre","Other","--s-autre",45)
 };
 const SK = Object.keys(SPORTS);
-const INT = {facile:"Facile",modere:"Modéré",intense:"Intense"};
-const DAYS = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
-const DAYS_L = ["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"];
-const MONTHS = ["janv.","févr.","mars","avr.","mai","juin","juil.","août","sept.","oct.","nov.","déc."];
+const INT = () => t({facile:"Facile",modere:"Modéré",intense:"Intense"},{facile:"Easy",modere:"Moderate",intense:"Hard"});
+const DAYS = () => t(["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"],["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]);
+const DAYS_L = () => t(["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"],["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]);
+const MONTHS = () => t(["janv.","févr.","mars","avr.","mai","juin","juil.","août","sept.","oct.","nov.","déc."],["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]);
 const DEF_SET = {hrMax:190,hrRest:55,goalH:6,goal:"",restDay:0};
+function setLang(l,save=true){
+  if(l!=="fr"&&l!=="en"||l===LANG) return;
+  LANG=l; try{ localStorage.setItem("carnet-forme-lang",l); }catch(e){}
+  S._demo=null; S._demoPlans=null;
+  if(save){ S.set.lang=l; saveSettings(); }
+  applyStatic(); render();
+}
 
 const S = {
   tab:"dash", acts:[], plans:[], set:{...DEF_SET},
@@ -201,7 +221,8 @@ const S = {
   filter:"all", weekOff:0, evoSport:"course", evoMetric:"speed",
   sample:null, aiText:"", aiBusy:false,
   mcp:null, dl:null, perms:null, strava:{busy:false,msg:"",err:false}, autoSynced:false, installEvt:null,
-  stravaMode:null, stravaTok:null, stravaClientId:null, stravaFnMissing:false, fb:null
+  stravaMode:null, stravaTok:null, stravaClientId:null, stravaFnMissing:false, fb:null,
+  stravaFnOk:false, stravaNeedsApp:false, stravaApp:null
 };
 let refs = null; // db refs
 const charts = {};
@@ -215,10 +236,10 @@ const parseDay = k => { const [y,m,d] = k.slice(0,10).split("-").map(Number); re
 const addDays = (d,n) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
 const startOfWeek = d => { const x = new Date(d.getFullYear(),d.getMonth(),d.getDate()); const wd = (x.getDay()+6)%7; return addDays(x,-wd); };
 const today0 = () => { const n = new Date(); return new Date(n.getFullYear(),n.getMonth(),n.getDate()); };
-const fmtDate = d => `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+const fmtDate = d => t(`${d.getDate()} ${MONTHS()[d.getMonth()]}`,`${MONTHS()[d.getMonth()]} ${d.getDate()}`);
 const fmtDur = s => { if(!s) return "—"; const m = Math.round(s/60); const h = Math.floor(m/60); return h ? `${h}h${pad(m%60)}` : `${m} min`; };
-const fmtH = s => (s/3600).toFixed(1).replace(".",",");
-const fmtKm = k => k==null ? "—" : (k<10 ? k.toFixed(2) : k.toFixed(1)).replace(".",",");
+const fmtH = s => (s/3600).toFixed(1).replace(".",DEC());
+const fmtKm = k => k==null ? "—" : (k<10 ? k.toFixed(2) : k.toFixed(1)).replace(".",DEC());
 const sc = k => `var(${(SPORTS[k]||SPORTS.autre).v})`;
 const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const uid = () => Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
@@ -227,7 +248,7 @@ function paceStr(sport,a){
   if(!a.dist || !a.dur) return null;
   if(sport==="course"){ const p=a.dur/60/a.dist; return `${Math.floor(p)}:${pad(Math.round((p%1)*60)%60)} /km`; }
   if(sport==="natation"){ const p=a.dur/(a.dist*10); return `${Math.floor(p/60)}:${pad(Math.round(p%60)%60)} /100m`; }
-  if(sport==="velo"||sport==="autre"){ return `${(a.dist/(a.dur/3600)).toFixed(1).replace(".",",")} km/h`; }
+  if(sport==="velo"||sport==="autre"){ return `${(a.dist/(a.dur/3600)).toFixed(1).replace(".",DEC())} km/h`; }
   return null;
 }
 function toast(msg){ const t=document.createElement("div"); t.className="toast"; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),2800); }
@@ -235,7 +256,17 @@ function lsGet(){ try{ return JSON.parse(localStorage.getItem("carnet-forme-v1")
 function lsSet(){ try{ localStorage.setItem("carnet-forme-v1",JSON.stringify({acts:S.acts,plans:S.plans,set:S.set})); }catch(e){} }
 
 /* ============ stockage ============ */
-function setSync(state,txt){ $("#sync").innerHTML = `<span class="dot ${state}"></span><span>${esc(txt)}</span>`; }
+let syncMsg=["wait","Connexion…","Connecting…"];
+function setSync(state,fr,en){ syncMsg=[state,fr,en??fr]; $("#sync").innerHTML = `<span class="dot ${state}"></span><span>${esc(t(syncMsg[1],syncMsg[2]))}</span>`; }
+function applyStatic(){
+  const tabs={dash:t("Tableau de bord","Dashboard"),plan:t("Planning","Plan"),acts:t("Activités","Activities"),evo:t("Évolution","Progress"),set:t("Réglages","Settings")};
+  document.querySelectorAll("nav.tabs button").forEach(b=>b.textContent=tabs[b.dataset.tab]);
+  const set=(id,txt)=>{ const el=document.getElementById(id); if(el&&!el.disabled) el.textContent=txt; };
+  set("fb-login",t("Se connecter","Sign in")); set("install-app",t("Installer l'app","Install app")); set("dl-app",t("Télécharger l'app","Download app"));
+  const lb=$("#lang-btn"); if(lb){ lb.textContent=LANG==="en"?"FR":"EN"; lb.title=LANG==="en"?"Passer en français":"Switch to English"; }
+  document.documentElement.lang=LANG;
+  setSync(...syncMsg);
+}
 async function initStore(){
   setTimeout(()=>{ S.timedOut=true; render(); },1800);
   if(window.__STANDALONE) return initStandalone();
@@ -247,9 +278,9 @@ async function initStore(){
       if(db && id){
         const root = db.doc(`data/users/${id}/profile`);
         refs = {root, acts:root.collection("activities"), plans:root.collection("plans")};
-        S.mode="db"; setSync("ok","Synchronisé sur ton compte");
-        root.onSnapshot(s=>{ if(s.exists){ S.set={...DEF_SET,...s.data()}; render(); } }, e=>setSync("wait","Sync interrompue"));
-        refs.acts.onSnapshot(q=>{ S.acts=q.docs.map(d=>({id:d.id,...d.data()})); if(!q.metadata.fromCache){ S.actsReady=true; S.actsServer=true; maybeAutoSync(); } else if(q.size) S.actsReady=true; render(); }, e=>setSync("wait","Sync interrompue"));
+        S.mode="db"; setSync("ok","Synchronisé sur ton compte","Synced to your account");
+        root.onSnapshot(s=>{ if(s.exists){ S.set={...DEF_SET,...s.data()}; if(S.set.lang&&S.set.lang!==LANG) setLang(S.set.lang,false); render(); } }, e=>setSync("wait","Sync interrompue","Sync interrupted"));
+        refs.acts.onSnapshot(q=>{ S.acts=q.docs.map(d=>({id:d.id,...d.data()})); if(!q.metadata.fromCache){ S.actsReady=true; S.actsServer=true; maybeAutoSync(); } else if(q.size) S.actsReady=true; render(); }, e=>setSync("wait","Sync interrompue","Sync interrupted"));
         refs.plans.onSnapshot(q=>{ S.plans=q.docs.map(d=>({id:d.id,...d.data()})); if(!q.metadata.fromCache||q.size) S.plansReady=true; render(); }, ()=>{});
         C.use("sample").then(sm=>{ S.sample=sm; render(); });
         C.use("downloads").then(d=>{ S.dl=d; $("#dl-app").hidden=!d; render(); }).catch(()=>{});
@@ -260,7 +291,7 @@ async function initStore(){
     C.use("sample").then(sm=>{ S.sample=sm; render(); }).catch(()=>{});
   }
   loadLocal();
-  setSync("wait","Enregistré dans ce navigateur");
+  setSync("wait","Enregistré dans ce navigateur","Saved in this browser");
   render();
 }
 function loadLocal(){
@@ -271,38 +302,43 @@ function loadLocal(){
 
 /* ---- version installée : Firebase + Strava via fonction Netlify ---- */
 let unsubs=[];
+function resolveStravaMode(){
+  if(!S.stravaFnOk) return;
+  if(S.stravaNeedsApp) S.stravaClientId = S.stravaApp?.clientId || null;
+  S.stravaMode = S.stravaClientId ? "api" : null;
+}
 function detachFb(){ unsubs.forEach(f=>{ try{f();}catch(e){} }); unsubs=[]; }
 async function initStandalone(){
   loadLocal();
   const cfg=window.FIREBASE_CONFIG;
   fetch("/.netlify/functions/strava?action=config").then(async r=>{
     const j=await r.json().catch(()=>null);
-    if(r.ok&&j&&j.clientId){ S.stravaClientId=j.clientId; S.stravaMode="api"; }
+    if(r.ok&&j){ S.stravaFnOk=true; if(j.clientId&&!j.setup){ S.stravaClientId=j.clientId; } else S.stravaNeedsApp=true; resolveStravaMode(); }
     else S.stravaFnMissing = (j&&j.error==="missing_env") ? "env" : "fn";
     render(); maybeAutoSync();
   }).catch(()=>{ S.stravaFnMissing="fn"; render(); });
-  if(!window.firebase||!cfg||!cfg.apiKey){ S.fb={state:"noconfig"}; setSync("wait","Enregistré sur cet appareil"); render(); return; }
+  if(!window.firebase||!cfg||!cfg.apiKey){ S.fb={state:"noconfig"}; setSync("wait","Enregistré sur cet appareil","Saved on this device"); render(); return; }
   try{
     firebase.initializeApp(cfg);
     const fdb=firebase.firestore(); try{ fdb.settings({ignoreUndefinedProperties:true}); }catch(e){}
     S.fb={state:"wait",auth:firebase.auth(),db:fdb};
-  }catch(e){ S.fb={state:"noconfig"}; setSync("wait","Configuration Firebase invalide"); render(); return; }
-  try{ await S.fb.auth.getRedirectResult(); }catch(e){ if(e.code==="auth/unauthorized-domain") toast("Ajoute ce domaine dans Firebase → Authentication → Domaines autorisés."); }
+  }catch(e){ S.fb={state:"noconfig"}; setSync("wait","Configuration Firebase invalide","Invalid Firebase configuration"); render(); return; }
+  try{ await S.fb.auth.getRedirectResult(); }catch(e){ if(e.code==="auth/unauthorized-domain") toast(t("Ajoute ce domaine dans Firebase → Authentication → Domaines autorisés.","Add this domain in Firebase → Authentication → Authorized domains.")); }
   S.fb.auth.onAuthStateChanged(u=>{
     if(u) attachFirestore(u);
-    else { detachFb(); S.fb.state="out"; S.fb.user=null; S.stravaTok=null; loadLocal(); setSync("wait","Non connecté · données sur cet appareil"); render(); }
+    else { detachFb(); S.fb.state="out"; S.fb.user=null; S.stravaTok=null; S.stravaApp=null; resolveStravaMode(); loadLocal(); setSync("wait","Non connecté · données sur cet appareil","Signed out · data on this device"); render(); }
   });
 }
 function attachFirestore(u){
   detachFb();
   const base=S.fb.db.collection("users").doc(u.uid);
-  refs={root:base.collection("forme").doc("settings"), strava:base.collection("forme").doc("strava"), acts:base.collection("formeActivities"), plans:base.collection("formePlans")};
+  refs={root:base.collection("forme").doc("settings"), strava:base.collection("forme").doc("strava"), stravaApp:base.collection("forme").doc("stravaApp"), acts:base.collection("formeActivities"), plans:base.collection("formePlans")};
   const pendActs=S.acts.filter(a=>!String(a.id).startsWith("demo")), pendPlans=S.plans.filter(p=>!String(p.id).startsWith("dp"));
   S.fb.state="in"; S.fb.user=u; S.mode="db"; S.actsServer=false; S.autoSynced=false;
-  setSync("ok",`Synchronisé · ${u.email||u.displayName||"compte Google"}`);
-  const fail=e=>setSync("wait", e&&e.code==="permission-denied" ? "Accès refusé : vérifie les règles Firestore" : "Synchronisation interrompue");
+  { const who=u.email||u.displayName||"Google"; setSync("ok",`Synchronisé · ${who}`,`Synced · ${who}`); }
+  const fail=e=>e&&e.code==="permission-denied" ? setSync("wait","Accès refusé : vérifie les règles Firestore","Access denied: check your Firestore rules") : setSync("wait","Synchronisation interrompue","Sync interrupted");
   let migrated=false;
-  unsubs.push(refs.root.onSnapshot(sn=>{ if(sn.exists){ S.set={...DEF_SET,...sn.data()}; render(); } }, fail));
+  unsubs.push(refs.root.onSnapshot(sn=>{ if(sn.exists){ S.set={...DEF_SET,...sn.data()}; if(S.set.lang&&S.set.lang!==LANG) setLang(S.set.lang,false); render(); } }, fail));
   unsubs.push(refs.acts.onSnapshot(q=>{
     S.acts=q.docs.map(d=>({id:d.id,...d.data()}));
     if(!q.metadata.fromCache){ S.actsReady=true; S.actsServer=true; if(!migrated){ migrated=true; migrateLocal(q.empty,pendActs,pendPlans); } maybeAutoSync(); }
@@ -310,6 +346,7 @@ function attachFirestore(u){
   }, fail));
   unsubs.push(refs.plans.onSnapshot(q=>{ S.plans=q.docs.map(d=>({id:d.id,...d.data()})); render(); }, ()=>{}));
   unsubs.push(refs.strava.onSnapshot(sn=>{ S.stravaTok=sn.exists?sn.data():null; render(); maybeAutoSync(); }, ()=>{}));
+  unsubs.push(refs.stravaApp.onSnapshot(sn=>{ S.stravaApp=sn.exists?sn.data():null; resolveStravaMode(); render(); maybeAutoSync(); }, ()=>{}));
   handleStravaReturn();
 }
 async function migrateLocal(empty,acts,plans){
@@ -318,8 +355,8 @@ async function migrateLocal(empty,acts,plans){
   try{
     for(let i=0;i<all.length;i+=400){ const b=S.fb.db.batch(); all.slice(i,i+400).forEach(([c,o])=>{ const {id,...body}=o; b.set(c.doc(String(id)),body); }); await b.commit(); }
     if(Object.keys(S.set).length) await refs.root.set({...S.set});
-    toast(`${acts.length} séance(s) de cet appareil ajoutée(s) à ton compte.`);
-  }catch(e){ toast("Transfert des séances locales impossible : vérifie les règles Firestore."); }
+    toast(t(`${acts.length} séance(s) de cet appareil ajoutée(s) à ton compte.`,`${acts.length} session(s) from this device added to your account.`));
+  }catch(e){ toast(t("Transfert des séances locales impossible : vérifie les règles Firestore.","Could not move local sessions: check your Firestore rules.")); }
 }
 async function fbLogin(){
   if(!S.fb||!S.fb.auth) return;
@@ -327,8 +364,8 @@ async function fbLogin(){
   try{ await S.fb.auth.signInWithPopup(prov); }
   catch(e){
     if(e.code==="auth/popup-closed-by-user"||e.code==="auth/cancelled-popup-request") return;
-    if(e.code==="auth/unauthorized-domain"){ toast("Ajoute ce domaine dans Firebase → Authentication → Domaines autorisés."); return; }
-    try{ await S.fb.auth.signInWithRedirect(prov); }catch(e2){ toast("Connexion Google impossible ("+(e2.code||"erreur")+")."); }
+    if(e.code==="auth/unauthorized-domain"){ toast(t("Ajoute ce domaine dans Firebase → Authentication → Domaines autorisés.","Add this domain in Firebase → Authentication → Authorized domains.")); return; }
+    try{ await S.fb.auth.signInWithRedirect(prov); }catch(e2){ toast(t("Connexion Google impossible (","Google sign-in failed (")+(e2.code||"error")+")."); }
   }
 }
 async function putAct(a){
@@ -344,17 +381,17 @@ async function putPlan(p){
 }
 async function delPlan(id){ if(S.mode==="db") await refs.plans.doc(id).delete(); else { S.plans=S.plans.filter(a=>a.id!==id); lsSet(); render(); } }
 let setTimer=null;
-function saveSettings(){ clearTimeout(setTimer); setTimer=setTimeout(async()=>{ if(S.mode==="db"){ try{ await refs.root.set({...S.set}); }catch(e){ toast("Réglages non enregistrés : réessaie dans un instant."); } } else lsSet(); },600); }
+function saveSettings(){ clearTimeout(setTimer); setTimer=setTimeout(async()=>{ if(S.mode==="db"){ try{ await refs.root.set({...S.set}); }catch(e){ toast(t("Réglages non enregistrés : réessaie dans un instant.","Settings not saved: try again in a moment.")); } } else lsSet(); },600); }
 
 /* ============ données d'exemple ============ */
 function demoActs(){
   let seed=7; const rnd=()=>{ seed=(seed*16807)%2147483647; return seed/2147483647; };
-  const out=[]; const t=today0(); const start=addDays(startOfWeek(t),-63);
+  const out=[]; const td=today0(); const start=addDays(startOfWeek(td),-63);
   const week=[ [1,"course",45,"facile"],[1,"renfo",50],[2,"natation",40],[3,"course",50,"intense"],[4,"renfo",45],[4,"velo",60],[5,"basket",80],[6,"course",75,"long"] ];
   for(let w=0;w<10;w++){
     const prog = w===6 ? .75 : 1+w*.03;
     for(const [wd,sp,base,kind] of week){
-      const d=addDays(start,w*7+wd); if(d>t) continue;
+      const d=addDays(start,w*7+wd); if(d>td) continue;
       if(rnd()<.12) continue;
       const min=Math.round(base*prog*(.9+rnd()*.2)); const dur=min*60;
       let dist=null,hr=null,hrMax=null,asc=null;
@@ -364,7 +401,7 @@ function demoActs(){
       if(sp==="basket"){ hr=150; hrMax=185; }
       if(sp==="renfo"){ hr=118; hrMax=150; }
       hr = hr ? Math.round(hr+(rnd()-.5)*6) : null;
-      out.push({id:"demo"+out.length,date:`${dayKey(d)}T18:${pad(Math.floor(rnd()*59))}`,sport:sp,title:SPORTS[sp].l+(kind==="intense"?" — fractionné":kind==="long"?" — sortie longue":""),dist,dur,hr,hrMax,cal:Math.round(min*9),asc,rpe:null,src:"exemple"});
+      out.push({id:"demo"+out.length,date:`${dayKey(d)}T18:${pad(Math.floor(rnd()*59))}`,sport:sp,title:SPORTS[sp].l+(kind==="intense"?t(" — fractionné"," — intervals"):kind==="long"?t(" — sortie longue"," — long run"):""),dist,dur,hr,hrMax,cal:Math.round(min*9),asc,rpe:null,src:"exemple"});
     }
   }
   return out;
@@ -405,93 +442,93 @@ function metrics(acts){
   return {ser,ctl:last.ctl,atl:last.atl,tsb:last.tsb,a7,c28,acwr,monotony: sd>0?mean/sd:null,histDays:ser.length};
 }
 function acwrState(r){
-  if(r==null) return ["mut","Pas assez d'historique"];
-  if(r>1.5) return ["bad","Pic de charge"];
-  if(r>1.3) return ["warn","Charge élevée"];
-  if(r<0.8) return ["info","Charge en baisse"];
-  return ["good","Zone optimale"];
+  if(r==null) return ["mut",t("Pas assez d'historique","Not enough history")];
+  if(r>1.5) return ["bad",t("Pic de charge","Load spike")];
+  if(r>1.3) return ["warn",t("Charge élevée","High load")];
+  if(r<0.8) return ["info",t("Charge en baisse","Load dropping")];
+  return ["good",t("Zone optimale","Sweet spot")];
 }
-function tsbState(t){
-  if(t<-25) return ["bad","Fatigue élevée"];
-  if(t<-10) return ["warn","En construction"];
-  if(t>15) return ["info","Très frais"];
-  return ["good","Équilibré"];
+function tsbState(t_){
+  if(t_<-25) return ["bad",t("Fatigue élevée","High fatigue")];
+  if(t_<-10) return ["warn",t("En construction","Building")];
+  if(t_>15) return ["info",t("Très frais","Very fresh")];
+  return ["good",t("Équilibré","Balanced")];
 }
 
 /* ============ conseils ============ */
 function advice(acts,plans){
-  const out=[]; const t=today0(); const m=metrics(acts);
+  const out=[]; const td=today0(); const m=metrics(acts);
   const inRange=(a,from,to)=>{ const d=parseDay(a.date); return d>=from && d<=to; };
-  const last=(n)=>acts.filter(a=>inRange(a,addDays(t,-(n-1)),t));
-  if(!acts.length){ out.push({lvl:"info",t:"Importe tes premières séances",b:"Ajoute un export CSV de Garmin Connect dans l'onglet Activités pour obtenir des conseils basés sur ta charge réelle."}); return out; }
+  const last=(n)=>acts.filter(a=>inRange(a,addDays(td,-(n-1)),td));
+  if(!acts.length){ out.push({lvl:"info",t:t("Importe tes premières séances","Import your first sessions"),b:t("Ajoute un export CSV de Garmin Connect dans l'onglet Activités pour obtenir des conseils basés sur ta charge réelle.","Add a Garmin Connect CSV export in the Activities tab, or connect Strava, to get advice based on your real training load.")}); return out; }
 
-  if(m.histDays<21) out.push({lvl:"info",t:"Historique encore court",b:`Seulement ${m.histDays} jours de données. Le ratio de charge devient fiable après 3 à 4 semaines : importe plus d'historique Garmin si tu l'as.`});
-  else if(m.acwr>1.5) out.push({lvl:"bad",t:"Pic de charge : lève le pied",b:`Ta charge des 7 derniers jours vaut ${m.acwr.toFixed(2).replace(".",",")}× ta moyenne sur 4 semaines. Au-delà de 1,5 le risque de blessure grimpe. Remplace la prochaine séance intense par de l'endurance facile ou un repos.`});
-  else if(m.acwr>1.3) out.push({lvl:"warn",t:"Charge en hausse rapide",b:`Ratio aigu/chronique à ${m.acwr.toFixed(2).replace(".",",")}. Garde les prochains jours en intensité basse avant d'ajouter du volume.`});
-  else if(m.acwr<0.8) out.push({lvl:"info",t:"Tu as de la marge",b:`Ta semaine est plus légère que d'habitude (ratio ${m.acwr.toFixed(2).replace(".",",")}). Si tu te sens bien, ajoute une séance facile ou allonge la sortie longue de 10 %.`});
+  if(m.histDays<21) out.push({lvl:"info",t:t("Historique encore court","Short history so far"),b:t(`Seulement ${m.histDays} jours de données. Le ratio de charge devient fiable après 3 à 4 semaines : importe plus d'historique Garmin si tu l'as.`,`Only ${m.histDays} days of data. The load ratio becomes reliable after 3 to 4 weeks: import more Garmin history if you have it.`)});
+  else if(m.acwr>1.5) out.push({lvl:"bad",t:t("Pic de charge : lève le pied","Load spike: ease off"),b:t(`Ta charge des 7 derniers jours vaut ${m.acwr.toFixed(2).replace(".",DEC())}× ta moyenne sur 4 semaines. Au-delà de 1,5 le risque de blessure grimpe. Remplace la prochaine séance intense par de l'endurance facile ou un repos.`,`Your last 7 days of load are ${m.acwr.toFixed(2)}× your 4-week average. Above 1.5, injury risk climbs. Swap your next hard session for easy endurance or rest.`)});
+  else if(m.acwr>1.3) out.push({lvl:"warn",t:t("Charge en hausse rapide","Load rising fast"),b:t(`Ratio aigu/chronique à ${m.acwr.toFixed(2).replace(".",DEC())}. Garde les prochains jours en intensité basse avant d'ajouter du volume.`,`Acute:chronic ratio at ${m.acwr.toFixed(2)}. Keep the next few days at low intensity before adding volume.`)});
+  else if(m.acwr<0.8) out.push({lvl:"info",t:t("Tu as de la marge","You have room to add"),b:t(`Ta semaine est plus légère que d'habitude (ratio ${m.acwr.toFixed(2).replace(".",DEC())}). Si tu te sens bien, ajoute une séance facile ou allonge la sortie longue de 10 %.`,`This week is lighter than usual (ratio ${m.acwr.toFixed(2)}). If you feel good, add an easy session or extend your long session by 10%.`)});
 
-  if(m.tsb<-25) out.push({lvl:"bad",t:"Fatigue accumulée",b:`Ton indice de fraîcheur est à ${Math.round(m.tsb)}. Prévois 1 à 2 jours de récupération (sommeil, mobilité, séance très facile).`});
-  else if(m.tsb>15 && m.histDays>=21) out.push({lvl:"info",t:"Tu es frais",b:"Bon moment pour une séance clé ou un test (5 km, FTP, 400 m nage). Sans objectif proche, ta forme va baisser : relance le volume."});
+  if(m.tsb<-25) out.push({lvl:"bad",t:t("Fatigue accumulée","Accumulated fatigue"),b:t(`Ton indice de fraîcheur est à ${Math.round(m.tsb)}. Prévois 1 à 2 jours de récupération (sommeil, mobilité, séance très facile).`,`Your freshness score is ${Math.round(m.tsb)}. Plan 1 to 2 recovery days (sleep, mobility, a very easy session).`)});
+  else if(m.tsb>15 && m.histDays>=21) out.push({lvl:"info",t:t("Tu es frais","You're fresh"),b:t("Bon moment pour une séance clé ou un test (5 km, FTP, 400 m nage). Sans objectif proche, ta forme va baisser : relance le volume.","Good time for a key session or a test (5K, FTP, 400 m swim). With no event coming up, your fitness will drop: build volume again.")});
 
   const run=(from,to)=>acts.filter(a=>a.sport==="course"&&inRange(a,from,to)).reduce((s,a)=>s+(a.dist||0),0);
-  const r0=run(addDays(t,-6),t); const rPrev=[1,2,3].map(i=>run(addDays(t,-6-7*i),addDays(t,-7*i))); const rAvg=rPrev.reduce((s,x)=>s+x,0)/3;
-  if(rAvg>5 && r0>rAvg*1.15 && r0>10) out.push({lvl:"warn",t:"Kilométrage course en forte hausse",b:`${fmtKm(r0)} km sur 7 jours contre ${fmtKm(rAvg)} km en moyenne avant (+${Math.round((r0/rAvg-1)*100)} %). Vise +10 % maximum par semaine pour ménager tendons et périoste.`});
+  const r0=run(addDays(td,-6),td); const rPrev=[1,2,3].map(i=>run(addDays(td,-6-7*i),addDays(td,-7*i))); const rAvg=rPrev.reduce((s,x)=>s+x,0)/3;
+  if(rAvg>5 && r0>rAvg*1.15 && r0>10) out.push({lvl:"warn",t:t("Kilométrage course en forte hausse","Running mileage jumping"),b:t(`${fmtKm(r0)} km sur 7 jours contre ${fmtKm(rAvg)} km en moyenne avant (+${Math.round((r0/rAvg-1)*100)} %). Vise +10 % maximum par semaine pour ménager tendons et périoste.`,`${fmtKm(r0)} km over 7 days vs ${fmtKm(rAvg)} km on average before (+${Math.round((r0/rAvg-1)*100)}%). Aim for +10% per week at most to protect tendons and shins.`)});
 
   const l7=last(7); const activeDays=new Set(l7.map(a=>a.date.slice(0,10))).size;
-  if(activeDays>=7) out.push({lvl:"warn",t:"Aucun jour de repos depuis 7 jours",b:"Le progrès se fait pendant la récupération. Place un vrai jour off dans les 48 h."});
+  if(activeDays>=7) out.push({lvl:"warn",t:t("Aucun jour de repos depuis 7 jours","No rest day in 7 days"),b:t("Le progrès se fait pendant la récupération. Place un vrai jour off dans les 48 h.","Progress happens during recovery. Take a real day off within 48 hours.")});
 
   const l14=last(14).filter(a=>a.hr||a.rpe);
   if(l14.length>=4){
     const hardMin=l14.filter(isHard).reduce((s,a)=>s+a.dur,0), tot=l14.reduce((s,a)=>s+a.dur,0);
     const share=hardMin/tot;
-    if(share>.3) out.push({lvl:"warn",t:"Trop de temps en intensité",b:`${Math.round(share*100)} % de ton temps sur 14 jours est à haute intensité. Le modèle 80/20 recommande environ 20 % : ralentis tes footings jusqu'à pouvoir parler en phrases complètes.`});
-    else if(share<.08 && l14.length>=6) out.push({lvl:"info",t:"Ajoute un peu de qualité",b:"Presque tout ton volume est en endurance. Une séance par semaine au seuil ou en fractionné court ferait progresser ta vitesse."});
+    if(share>.3) out.push({lvl:"warn",t:t("Trop de temps en intensité","Too much time at high intensity"),b:t(`${Math.round(share*100)} % de ton temps sur 14 jours est à haute intensité. Le modèle 80/20 recommande environ 20 % : ralentis tes footings jusqu'à pouvoir parler en phrases complètes.`,`${Math.round(share*100)}% of your time over 14 days is at high intensity. The 80/20 model recommends about 20%: slow your easy runs down until you can talk in full sentences.`)});
+    else if(share<.08 && l14.length>=6) out.push({lvl:"info",t:t("Ajoute un peu de qualité","Add some quality"),b:t("Presque tout ton volume est en endurance. Une séance par semaine au seuil ou en fractionné court ferait progresser ta vitesse.","Almost all your volume is easy endurance. One threshold or short-interval session per week would improve your speed.")});
   }
-  if(m.monotony && m.monotony>2 && m.a7>0) out.push({lvl:"info",t:"Semaine trop monotone",b:"Tes journées se ressemblent toutes en charge. Alterne journées dures et journées très faciles : c'est plus efficace et moins usant."});
+  if(m.monotony && m.monotony>2 && m.a7>0) out.push({lvl:"info",t:t("Semaine trop monotone","Week too monotonous"),b:t("Tes journées se ressemblent toutes en charge. Alterne journées dures et journées très faciles : c'est plus efficace et moins usant.","Your days all carry similar load. Alternate hard days and very easy days: it works better and wears you down less.")});
 
   const hasEndu=last(28).some(a=>["course","velo","natation"].includes(a.sport));
-  if(hasEndu && !last(14).some(a=>a.sport==="renfo")) out.push({lvl:"info",t:"Pas de renfo depuis 2 semaines",b:"Deux séances de 30 à 45 min par semaine (gainage, tractions, squats, fentes) réduisent nettement le risque de blessure en course."});
+  if(hasEndu && !last(14).some(a=>a.sport==="renfo")) out.push({lvl:"info",t:t("Pas de renfo depuis 2 semaines","No strength work in 2 weeks"),b:t("Deux séances de 30 à 45 min par semaine (gainage, tractions, squats, fentes) réduisent nettement le risque de blessure en course.","Two 30–45 min sessions per week (core, pull-ups, squats, lunges) clearly reduce running injury risk.")});
 
-  const missed=plans.filter(p=>{ const d=parseDay(p.date); return d<t && d>=addDays(t,-7) && !acts.some(a=>a.date.slice(0,10)===p.date && a.sport===p.sport); });
-  if(missed.length>=2) out.push({lvl:"info",t:`${missed.length} séances prévues non faites cette semaine`,b:"Ton planning est peut-être trop ambitieux. Garde les séances clés et allège le reste plutôt que de tout rattraper."});
+  const missed=plans.filter(p=>{ const d=parseDay(p.date); return d<td && d>=addDays(td,-7) && !acts.some(a=>a.date.slice(0,10)===p.date && a.sport===p.sport); });
+  if(missed.length>=2) out.push({lvl:"info",t:t(`${missed.length} séances prévues non faites cette semaine`,`${missed.length} planned sessions missed this week`),b:t("Ton planning est peut-être trop ambitieux. Garde les séances clés et allège le reste plutôt que de tout rattraper.","Your plan may be too ambitious. Keep the key sessions and lighten the rest rather than making everything up.")});
 
-  const sw=startOfWeek(t); const weekSec=acts.filter(a=>inRange(a,sw,t)).reduce((s,a)=>s+a.dur,0);
-  const goal=(S.set.goalH||0)*3600; const daysLeft=6-((t.getDay()+6)%7);
+  const sw=startOfWeek(td); const weekSec=acts.filter(a=>inRange(a,sw,td)).reduce((s,a)=>s+a.dur,0);
+  const goal=(S.set.goalH||0)*3600; const daysLeft=6-((td.getDay()+6)%7);
   if(goal>0){
-    if(weekSec>=goal) out.push({lvl:"good",t:"Objectif hebdo atteint",b:`${fmtH(weekSec)} h sur ${S.set.goalH} h. Le reste de la semaine peut être consacré à la récupération.`});
-    else if(daysLeft<=2 && weekSec<goal*.6) out.push({lvl:"info",t:"Objectif hebdo hors de portée",b:`${fmtH(weekSec)} h sur ${S.set.goalH} h avec ${daysLeft} jour(s) restant(s). Ne compense pas en entassant : une semaine plus légère n'est pas un problème.`});
+    if(weekSec>=goal) out.push({lvl:"good",t:t("Objectif hebdo atteint","Weekly goal reached"),b:t(`${fmtH(weekSec)} h sur ${S.set.goalH} h. Le reste de la semaine peut être consacré à la récupération.`,`${fmtH(weekSec)} h of ${S.set.goalH} h. You can use the rest of the week for recovery.`)});
+    else if(daysLeft<=2 && weekSec<goal*.6) out.push({lvl:"info",t:t("Objectif hebdo hors de portée","Weekly goal out of reach"),b:t(`${fmtH(weekSec)} h sur ${S.set.goalH} h avec ${daysLeft} jour(s) restant(s). Ne compense pas en entassant : une semaine plus légère n'est pas un problème.`,`${fmtH(weekSec)} h of ${S.set.goalH} h with ${daysLeft} day(s) left. Don't cram to catch up: a lighter week is fine.`)});
   }
   const recent=last(42); const practiced=[...new Set(recent.map(a=>a.sport))];
-  for(const sp of practiced){ const lastD=recent.filter(a=>a.sport===sp).map(a=>parseDay(a.date)).sort((a,b)=>b-a)[0]; const gap=Math.round((t-lastD)/864e5); if(gap>=12 && sp!=="autre") out.push({lvl:"info",t:`${SPORTS[sp].l} : ${gap} jours sans séance`,b:"Reprends progressivement avec une séance courte et facile."}); }
+  for(const sp of practiced){ const lastD=recent.filter(a=>a.sport===sp).map(a=>parseDay(a.date)).sort((a,b)=>b-a)[0]; const gap=Math.round((td-lastD)/864e5); if(gap>=12 && sp!=="autre") out.push({lvl:"info",t:t(`${SPORTS[sp].l} : ${gap} jours sans séance`,`${SPORTS[sp].l}: ${gap} days without a session`),b:t("Reprends progressivement avec une séance courte et facile.","Ease back in with a short, easy session.")}); }
 
-  if(!out.some(o=>o.lvl==="bad"||o.lvl==="warn")) out.unshift({lvl:"good",t:"Charge bien équilibrée",b:"Ta progression est régulière, sans signal d'alerte. Continue sur ce rythme et garde au moins un jour de repos par semaine."});
+  if(!out.some(o=>o.lvl==="bad"||o.lvl==="warn")) out.unshift({lvl:"good",t:t("Charge bien équilibrée","Well-balanced load"),b:t("Ta progression est régulière, sans signal d'alerte. Continue sur ce rythme et garde au moins un jour de repos par semaine.","Your progression is steady with no warning signs. Keep this rhythm and take at least one rest day per week.")});
   const rank={bad:0,warn:1,info:2,good:3};
   return out.sort((a,b)=>rank[a.lvl]-rank[b.lvl]);
 }
 
 /* ============ générateur de semaine ============ */
 function suggestWeek(monday,acts){
-  const t=today0(); const m=metrics(acts);
-  const from=addDays(t,-27); const rec=acts.filter(a=>parseDay(a.date)>=from);
+  const td=today0(); const m=metrics(acts);
+  const from=addDays(td,-27); const rec=acts.filter(a=>parseDay(a.date)>=from);
   const per={}; for(const a of rec){ per[a.sport]=(per[a.sport]||0)+a.dur/60/4; }
   let total=Object.values(per).reduce((s,x)=>s+x,0);
-  let factor=1.07, note="progression +7 %";
-  if(m.acwr>1.3||m.tsb<-20){ factor=.8; note="semaine allégée (fatigue)"; }
-  if(!total){ total=(S.set.goalH||5)*60; per.course=total*.4; per.renfo=total*.25; per.natation=total*.2; per.velo=total*.15; factor=1; note="répartition de départ"; }
+  let factor=1.07, note=t("progression +7 %","+7% progression");
+  if(m.acwr>1.3||m.tsb<-20){ factor=.8; note=t("semaine allégée (fatigue)","lighter week (fatigue)"); }
+  if(!total){ total=(S.set.goalH||5)*60; per.course=total*.4; per.renfo=total*.25; per.natation=total*.2; per.velo=total*.15; factor=1; note=t("répartition de départ","starting split"); }
   const sessions=[];
   for(const sp of SK){
     const mins=(per[sp]||0)*factor; if(mins<20) continue;
     let n=Math.max(1,Math.round(mins/SPORTS[sp].len)); n=Math.min(n,4);
     const each=Math.round(mins/n/5)*5;
     for(let i=0;i<n;i++){
-      let int="facile", title=SPORTS[sp].l+" — endurance";
-      if(sp==="renfo"){ int="modere"; title=i%2?"Renfo — tirage & gainage":"Renfo — poussée & jambes"; }
-      else if(sp==="basket"){ int="intense"; title="Basket"; }
-      else if(sp==="autre"){ title="Activité libre"; }
-      else if(n>=2 && i===0){ int="intense"; title=sp==="course"?"Course — fractionné / seuil":sp==="velo"?"Vélo — intervalles":"Natation — séries"; }
-      else if(n>=3 && i===n-1 && (sp==="course"||sp==="velo")){ title=sp==="course"?"Course — sortie longue":"Vélo — sortie longue"; }
-      const dur = title.includes("longue") ? Math.round(each*1.4/5)*5 : (int==="intense"&&sp!=="basket") ? Math.max(30,Math.round(each*.85/5)*5) : each;
-      sessions.push({sport:sp,title,dur,int,long:title.includes("longue")});
+      let int="facile", title=SPORTS[sp].l+" — endurance", long=false;
+      if(sp==="renfo"){ int="modere"; title=i%2?t("Renfo — tirage & gainage","Strength — pull & core"):t("Renfo — poussée & jambes","Strength — push & legs"); }
+      else if(sp==="basket"){ int="intense"; title=SPORTS.basket.l; }
+      else if(sp==="autre"){ title=t("Activité libre","Free activity"); }
+      else if(n>=2 && i===0){ int="intense"; title=sp==="course"?t("Course — fractionné / seuil","Run — intervals / threshold"):sp==="velo"?t("Vélo — intervalles","Bike — intervals"):t("Natation — séries","Swim — sets"); }
+      else if(n>=3 && i===n-1 && (sp==="course"||sp==="velo")){ long=true; title=sp==="course"?t("Course — sortie longue","Run — long run"):t("Vélo — sortie longue","Bike — long ride"); }
+      const dur = long ? Math.round(each*1.4/5)*5 : (int==="intense"&&sp!=="basket") ? Math.max(30,Math.round(each*.85/5)*5) : each;
+      sessions.push({sport:sp,title,dur,int,long});
     }
   }
   const rest=S.set.restDay ?? 0; const load=[0,0,0,0,0,0,0]; const hard=[0,0,0,0,0,0,0]; const res=[];
@@ -508,7 +545,7 @@ function suggestWeek(monday,acts){
       if(sc<score){ score=sc; best=d; }
     }
     load[best]+=s.dur; if(s.int==="intense"||s.long) hard[best]=1;
-    res.push({date:dayKey(addDays(monday,best)),sport:s.sport,title:s.title,dur:s.dur,int:s.int,notes:`Proposé automatiquement : ${note}.`,gen:true});
+    res.push({date:dayKey(addDays(monday,best)),sport:s.sport,title:s.title,dur:s.dur,int:s.int,notes:t(`Proposé automatiquement : ${note}.`,`Suggested automatically: ${note}.`),gen:true});
   }
   return res;
 }
@@ -575,7 +612,7 @@ function parseCSV(text){
   const iHrM=find("max hr","fc max","frequence cardiaque maximale",/max.*hr|(fc|cardiaque).*max/);
   const iAsc=find("total ascent","ascension totale","gain d'altitude total",/ascent|ascension|denivele pos/);
   const iTe=find(/aerobic te|effet training aerobie|aerob/);
-  if(iDate<0||iTime<0) throw new Error("Colonnes Date et Durée introuvables. Utilise l'export CSV de la liste d'activités Garmin Connect.");
+  if(iDate<0||iTime<0) throw new Error(t("Colonnes Date et Durée introuvables. Utilise l'export CSV de la liste d'activités Garmin Connect.","Date and Duration columns not found. Use the CSV export of the Garmin Connect activity list."));
   const out=[];
   for(const r of rows.slice(1)){
     const date=parseDateStr(r[iDate]); const d=dur(r[iTime]); if(!date||!d) continue;
@@ -623,26 +660,26 @@ async function importFiles(files){
   let parsed=[], errors=[];
   for(const f of files){
     const name=f.name.toLowerCase();
-    if(name.endsWith(".fit")||name.endsWith(".zip")){ errors.push(`${f.name} : format FIT/ZIP non lu. Exporte l'activité au format TCX ou GPX.`); continue; }
+    if(name.endsWith(".fit")||name.endsWith(".zip")){ errors.push(t(`${f.name} : format FIT/ZIP non lu. Exporte l'activité au format TCX ou GPX.`,`${f.name}: FIT/ZIP files aren't supported. Export the activity as TCX or GPX.`)); continue; }
     try{
       const txt=await f.text();
       if(name.endsWith(".csv")) parsed.push(...parseCSV(txt));
       else if(name.endsWith(".tcx")) parsed.push(...parseTCX(txt,name));
       else if(name.endsWith(".gpx")) parsed.push(...parseGPX(txt,name));
-      else errors.push(`${f.name} : extension non reconnue.`);
+      else errors.push(t(`${f.name} : extension non reconnue.`,`${f.name}: unrecognized file type.`));
     }catch(e){ errors.push(`${f.name} : ${e.message}`); }
   }
   const existing=new Set(S.acts.map(a=>a.id));
   const fresh=[]; for(const a of parsed){ a.id="g"+hash(a.date.slice(0,16)+a.sport+Math.round(a.dur/30)); if(!existing.has(a.id) && !findDup(a)){ existing.add(a.id); fresh.push(a); } }
   const dup=parsed.length-fresh.length;
-  if(!fresh.length){ toast(errors[0] || (dup?`Aucune nouvelle activité (${dup} déjà présentes).`:"Aucune activité trouvée dans ces fichiers.")); return; }
+  if(!fresh.length){ toast(errors[0] || (dup?t(`Aucune nouvelle activité (${dup} déjà présentes).`,`No new activities (${dup} already there).`):t("Aucune activité trouvée dans ces fichiers.","No activities found in these files."))); return; }
   const status=$("#import-status");
   let n=0;
   if(S.mode==="db"){
-    for(const a of fresh){ try{ await putAct(a); }catch(e){ if(e?.code==="quota_exceeded"){ toast("Stockage plein : supprime d'anciennes activités."); break; } } n++; if(status) status.textContent=`Import en cours… ${n}/${fresh.length}`; }
+    for(const a of fresh){ try{ await putAct(a); }catch(e){ if(e?.code==="quota_exceeded"){ toast(t("Stockage plein : supprime d'anciennes activités.","Storage full: delete some old activities.")); break; } } n++; if(status) status.textContent=t(`Import en cours… ${n}/${fresh.length}`,`Importing… ${n}/${fresh.length}`); }
   } else { S.acts.push(...fresh); lsSet(); n=fresh.length; }
   if(status) status.textContent="";
-  toast(`${n} activité(s) importée(s)${dup?`, ${dup} doublon(s) ignoré(s)`:""}.${errors.length?" "+errors[0]:""}`);
+  toast(t(`${n} activité(s) importée(s)${dup?`, ${dup} doublon(s) ignoré(s)`:""}.`,`${n} activit${n>1?"ies":"y"} imported${dup?`, ${dup} duplicate(s) skipped`:""}.`)+(errors.length?" "+errors[0]:""));
   render();
 }
 
@@ -656,16 +693,15 @@ function fromStrava(x){
 }
 function stravaErr(e){
   switch(e?.code){
-    case "server_not_connected": case "server_not_found": return "Strava n'est pas connecté à ton compte Claude. Ajoute-le dans claude.ai → Paramètres → Connecteurs, puis réessaie.";
-    case "needs_reauth": return "Ta connexion Strava a expiré. Reconnecte Strava dans claude.ai → Paramètres → Connecteurs.";
-    case "selection_required": return "Plusieurs connecteurs Strava existent : choisis-en un quand claude.ai te le propose.";
-    case "approval_required": case "not_in_manifest": case "consent_required": return "L'accès à Strava n'a pas été autorisé pour cette page. Clique sur « Connecter Strava » et accepte.";
-    case "blocked_by_policy": return "Ton organisation bloque l'accès à Strava depuis cette page.";
-    case "server_unavailable": case "rate_limited": return "Strava ne répond pas pour le moment. Réessaie dans quelques minutes.";
-    case "api_not_linked": return "Connecte d'abord ton compte Strava.";
-    case "api_auth": return "L'accès Strava a été révoqué ou a expiré. Clique sur « Reconnecter Strava ».";
-    case "api_error": return "Strava ne répond pas pour le moment. Réessaie dans quelques minutes.";
-    default: return "La synchronisation n'a pas abouti. Réessaie plus tard.";
+    case "server_not_connected": case "server_not_found": return t("Strava n'est pas connecté à ton compte Claude. Ajoute-le dans claude.ai → Paramètres → Connecteurs, puis réessaie.","Strava isn't connected to your Claude account. Add it in claude.ai → Settings → Connectors, then try again.");
+    case "needs_reauth": return t("Ta connexion Strava a expiré. Reconnecte Strava dans claude.ai → Paramètres → Connecteurs.","Your Strava connection expired. Reconnect Strava in claude.ai → Settings → Connectors.");
+    case "selection_required": return t("Plusieurs connecteurs Strava existent : choisis-en un quand claude.ai te le propose.","Several Strava connectors exist: pick one when claude.ai asks.");
+    case "approval_required": case "not_in_manifest": case "consent_required": return t("L'accès à Strava n'a pas été autorisé pour cette page. Clique sur « Connecter Strava » et accepte.","Strava access wasn't allowed for this page. Click “Connect Strava” and accept.");
+    case "blocked_by_policy": return t("Ton organisation bloque l'accès à Strava depuis cette page.","Your organization blocks Strava access from this page.");
+    case "server_unavailable": case "rate_limited": case "api_error": return t("Strava ne répond pas pour le moment. Réessaie dans quelques minutes.","Strava isn't responding right now. Try again in a few minutes.");
+    case "api_not_linked": return t("Connecte d'abord ton compte Strava.","Connect your Strava account first.");
+    case "api_auth": return t("L'accès Strava a été révoqué ou a expiré. Clique sur « Reconnecter Strava ».","Strava access was revoked or expired. Click “Reconnect Strava”.");
+    default: return t("La synchronisation n'a pas abouti. Réessaie plus tard.","Sync didn't complete. Try again later.");
   }
 }
 async function maybeAutoSync(){
@@ -685,6 +721,7 @@ function fromStravaApi(x){
     cal:x.calories??(x.kilojoules?Math.round(x.kilojoules):null),asc:x.total_elevation_gain?Math.round(x.total_elevation_gain):null,re:x.suffer_score??null,rpe:null,src:"strava"};
 }
 async function stravaPost(body){
+  if(S.stravaNeedsApp && S.stravaApp){ body={...body,client_id:S.stravaApp.clientId,client_secret:S.stravaApp.clientSecret}; }
   const r=await fetch("/.netlify/functions/strava",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
   const j=await r.json().catch(()=>({}));
   if(!r.ok) throw {code:r.status===401||r.status===400?"api_auth":"api_error",message:j.error};
@@ -699,7 +736,7 @@ async function stravaToken(){
   return t.access_token;
 }
 function stravaAuthorize(){
-  if(!S.fb||S.fb.state!=="in"){ toast("Connecte-toi d'abord avec Google : la liaison Strava est enregistrée sur ton compte."); return; }
+  if(!S.fb||S.fb.state!=="in"){ toast(t("Connecte-toi d'abord avec Google : la liaison Strava est enregistrée sur ton compte.","Sign in with Google first: the Strava link is saved to your account.")); return; }
   const redirect=location.origin+location.pathname;
   const u=new URL("https://www.strava.com/oauth/authorize");
   u.search=new URLSearchParams({client_id:S.stravaClientId,redirect_uri:redirect,response_type:"code",approval_prompt:"auto",scope:"read,activity:read_all",state:"forme"}).toString();
@@ -709,13 +746,13 @@ async function handleStravaReturn(){
   const u=new URL(location.href); const code=u.searchParams.get("code"), state=u.searchParams.get("state"), err=u.searchParams.get("error");
   if(state!=="forme") return;
   history.replaceState(null,"",location.pathname);
-  if(err||!code){ toast("Connexion Strava annulée."); return; }
-  if(!/activity:read/.test(u.searchParams.get("scope")||"")){ toast("Coche l'accès aux activités sur Strava pour pouvoir synchroniser."); return; }
+  if(err||!code){ toast(t("Connexion Strava annulée.","Strava connection cancelled.")); return; }
+  if(!/activity:read/.test(u.searchParams.get("scope")||"")){ toast(t("Coche l'accès aux activités sur Strava pour pouvoir synchroniser.","Tick activity access on Strava so the app can sync.")); return; }
   try{
-    const t=await stravaPost({action:"exchange",code});
-    S.stravaTok=t; await refs.strava.set(t);
-    toast("Strava connecté. Import de tes séances…"); S.autoSynced=true; syncStrava();
-  }catch(e){ S.strava={busy:false,msg:"Connexion Strava impossible. Vérifie STRAVA_CLIENT_ID et STRAVA_CLIENT_SECRET sur Netlify.",err:true}; render(); }
+    const tok=await stravaPost({action:"exchange",code});
+    S.stravaTok=tok; await refs.strava.set(tok);
+    toast(t("Strava connecté. Import de tes séances…","Strava connected. Importing your sessions…")); S.autoSynced=true; syncStrava();
+  }catch(e){ S.strava={busy:false,msg:t("Connexion Strava refusée. Vérifie le Client ID et le Client Secret (Réglages → Modifier l'app Strava), puis réessaie.","Strava refused the connection. Check the Client ID and Client Secret (Settings → Change Strava app), then try again."),err:true,code:"api_auth"}; render(); }
 }
 async function fetchStravaSince(since){
   if(S.stravaMode==="api"){
@@ -738,7 +775,7 @@ async function fetchStravaSince(since){
 async function syncStrava(){
   if(!S.stravaMode||S.strava.busy) return;
   const setMsg=(msg,err=false,busy=true)=>{ S.strava={busy,msg,err}; const el=$("#strava-status"); if(el){ el.textContent=msg; el.parentElement.classList.toggle("err",err);} const b=$("#strava-sync"); if(b) b.disabled=busy; };
-  setMsg("Recherche des nouvelles séances…");
+  setMsg(t("Recherche des nouvelles séances…","Looking for new sessions…"));
   try{
     const since=S.set.stravaSync ? new Date(Date.parse(S.set.stravaSync)-3*864e5) : addDays(today0(),-365);
     const {list,needPerf}=await fetchStravaSince(since);
@@ -755,43 +792,67 @@ async function syncStrava(){
         }catch(e){ if(["server_not_connected","needs_reauth","not_in_manifest","approval_required","blocked_by_policy"].includes(e?.code)) throw e; }
       }
       if(S.mode==="db"){ const {id,...body}=a; await refs.acts.doc(id).set(body); } else S.acts.push(a);
-      n++; setMsg(`Import des séances Strava… ${n}/${fresh.length}`);
+      n++; setMsg(t(`Import des séances Strava… ${n}/${fresh.length}`,`Importing Strava sessions… ${n}/${fresh.length}`));
     }
     if(S.mode!=="db") lsSet();
     S.set.stravaSync=new Date().toISOString();
     if(S.mode==="db"){ try{ await refs.root.set({...S.set}); }catch(e){} }
-    setMsg(fresh.length?`${fresh.length} nouvelle(s) séance(s) importée(s) depuis Strava.`:"Tout est à jour.",false,false);
-  }catch(e){ setMsg(stravaErr(e),true,false); }
+    setMsg(fresh.length?t(`${fresh.length} nouvelle(s) séance(s) importée(s) depuis Strava.`,`${fresh.length} new session(s) imported from Strava.`):t("Tout est à jour.","Everything is up to date."),false,false);
+  }catch(e){ setMsg(stravaErr(e),true,false); S.strava.code=e?.code; }
   render();
 }
-function agoStr(iso){ if(!iso) return null; const m=Math.round((Date.now()-Date.parse(iso))/60000); if(m<1) return "à l'instant"; if(m<60) return `il y a ${m} min`; const h=Math.round(m/60); if(h<48) return `il y a ${h} h`; return `il y a ${Math.round(h/24)} j`; }
+function agoStr(iso){ if(!iso) return null; const m=Math.round((Date.now()-Date.parse(iso))/60000); if(m<1) return t("à l'instant","just now"); if(m<60) return t(`il y a ${m} min`,`${m} min ago`); const h=Math.round(m/60); if(h<48) return t(`il y a ${h} h`,`${h} h ago`); const d=Math.round(h/24); return t(`il y a ${d} j`,`${d} days ago`); }
 function connCard(){
-  const steps=`<details><summary style="font-size:14px">Relier ta montre Garmin à Strava (une seule fois)</summary><ol class="steps" style="margin-top:6px">
-        <li>Ouvre <a href="https://connect.garmin.com/modern/settings" target="_blank" rel="noopener">les paramètres de Garmin Connect</a> → Applications partenaires (ou, dans l'app mobile : Plus → Paramètres → Applications partenaires).</li>
-        <li>Choisis Strava, connecte-toi et autorise le partage des activités.</li>
+  const steps=`<details><summary style="font-size:14px">${t("Relier ta montre Garmin à Strava (une seule fois)","Link your Garmin watch to Strava (one time)")}</summary><ol class="steps" style="margin-top:6px">
+        <li>${t(`Ouvre <a href="https://connect.garmin.com/modern/settings" target="_blank" rel="noopener">les paramètres de Garmin Connect</a> → Applications partenaires (ou, dans l'app mobile : Plus → Paramètres → Applications partenaires).`,`Open <a href="https://connect.garmin.com/modern/settings" target="_blank" rel="noopener">Garmin Connect settings</a> → Partner Apps (or, in the mobile app: More → Settings → Partner Apps).`)}</li>
+        <li>${t("Choisis Strava, connecte-toi et autorise le partage des activités.","Pick Strava, sign in and allow activity sharing.")}</li>
       </ol></details>`;
-  const shell=(btn,msg,err,intro)=>`<section class="card stack">
+  const shell=(btn,msg,err,extra="")=>`<section class="card stack">
     <div class="conn"><span class="logo" aria-hidden="true">S</span><div class="stack" style="gap:6px;min-width:0">
-      <div class="row between"><h2>Synchro automatique via Strava</h2>${btn}</div>
-      <p class="muted" style="margin:0;font-size:14px">${intro}</p>
-      <div class="status-line ${err?"err":""}"><span class="dot ${err?"":"ok"}" style="${err?"background:var(--bad)":""}"></span><span id="strava-status">${esc(msg)}</span></div>
+      <div class="row between"><h2>${t("Synchro automatique via Strava","Automatic sync via Strava")}</h2>${btn}</div>
+      <p class="muted" style="margin:0;font-size:14px">${t("Garmin n'ouvre pas son accès direct aux particuliers, mais ta montre envoie chaque séance à Strava. Une fois connecté, les nouvelles activités arrivent ici à chaque ouverture de l'app, avec la FC moyenne et l'effort relatif.","Garmin doesn't offer direct data access to individuals, but your watch sends every session to Strava. Once connected, new activities show up here each time you open the app, with average heart rate and relative effort.")}</p>
+      ${msg?`<div class="status-line ${err?"err":""}"><span class="dot ${err?"":"ok"}" style="${err?"background:var(--bad)":""}"></span><span id="strava-status">${esc(msg)}</span></div>`:""}
+      ${extra}
       ${steps}
     </div></div></section>`;
-  const intro="Garmin n'ouvre pas son accès direct aux particuliers, mais ta montre envoie chaque séance à Strava. Une fois connecté, les nouvelles activités arrivent ici à chaque ouverture de l'app, avec la FC moyenne et l'effort relatif.";
   const last=agoStr(S.set.stravaSync);
   if(window.__STANDALONE){
-    if(S.stravaFnMissing==="env") return shell("", "La fonction Strava est en ligne, mais STRAVA_CLIENT_ID et STRAVA_CLIENT_SECRET manquent dans les variables Netlify (étape 3 du LISEZMOI), puis redéploie.", true, intro);
-    if(S.stravaFnMissing) return shell("", "La fonction Strava n'est pas déployée sur ce site : le glisser-déposer ne la publie pas. Déploie via GitHub ou la ligne de commande (étape 4 du LISEZMOI).", true, intro);
-    if(!S.fb||S.fb.state==="noconfig") return shell("", "Renseigne ta configuration Firebase (fichier firebase-config.js) pour activer la synchro.", true, intro);
-    if(S.fb.state!=="in") return shell(`<button class="btn small" id="fb-login-2">Se connecter avec Google</button>`, "Connecte-toi pour synchroniser tes séances entre tes appareils et relier Strava.", false, intro);
-    if(!S.stravaMode) return shell("", "Vérification de la connexion Strava…", false, intro);
-    if(!S.stravaTok) return shell(`<button class="btn small" id="strava-sync">Connecter Strava</button>`, S.strava.msg||"Strava n'est pas encore relié.", S.strava.err, intro);
+    if(S.stravaFnMissing==="env") return shell("", t("Ce site utilise une ancienne version de la fonction Strava. Redéploie le dernier dossier carnet-de-forme-netlify.zip : la configuration Strava se fera ensuite ici, sans variables Netlify.","This site runs an old version of the Strava function. Redeploy the latest carnet-de-forme-netlify.zip: Strava setup will then happen right here, with no Netlify variables."), true);
+    if(S.stravaFnMissing) return shell("", t("La fonction Strava n'est pas déployée sur ce site : le glisser-déposer ne la publie pas. Déploie via GitHub ou la ligne de commande (étape 4 du LISEZMOI).","The Strava function isn't deployed on this site: drag-and-drop doesn't publish it. Deploy through GitHub or the command line (step 4 of LISEZMOI)."), true);
+    if(!S.fb||S.fb.state==="noconfig") return shell("", t("Renseigne ta configuration Firebase (fichier firebase-config.js) pour activer la synchro.","Fill in your Firebase configuration (firebase-config.js) to turn on sync."), true);
+    if(S.fb.state!=="in") return shell(`<button class="btn small" id="fb-login-2">${t("Se connecter avec Google","Sign in with Google")}</button>`, t("Connecte-toi pour synchroniser tes séances entre tes appareils et relier Strava.","Sign in to sync your sessions across devices and link Strava."), false);
+    if(!S.stravaFnOk) return shell("", t("Vérification de la connexion Strava…","Checking the Strava connection…"), false);
+    if(!S.stravaMode) return shell("", "", false, stravaSetup());
+    if(!S.stravaTok) return shell(`<button class="btn small" id="strava-sync">${t("Connecter Strava","Connect Strava")}</button>`, S.strava.msg||t("Strava n'est pas encore relié.","Strava isn't linked yet."), S.strava.err);
   } else if(!S.mcp){
-    return `<section class="card stack"><h2>Connexion automatique</h2><p class="muted" style="margin:0">La synchronisation automatique n'est pas disponible dans cette vue. Utilise l'import manuel ci-dessous.</p></section>`;
+    return `<section class="card stack"><h2>${t("Connexion automatique","Automatic connection")}</h2><p class="muted" style="margin:0">${t("La synchronisation automatique n'est pas disponible dans cette vue. Utilise l'import manuel ci-dessous.","Automatic sync isn't available in this view. Use the manual import below.")}</p></section>`;
   }
-  const msg=S.strava.msg || (last?`Dernière synchronisation ${last}.`:"Pas encore synchronisé.");
-  const label = S.strava.err && window.__STANDALONE && /révoqué/.test(S.strava.msg) ? "Reconnecter Strava" : (S.set.stravaSync||window.__STANDALONE ? "Synchroniser maintenant" : "Connecter Strava");
-  return shell(`<button class="btn small" id="strava-sync" ${S.strava.busy?"disabled":""}>${label}</button>`, msg, S.strava.err, intro);
+  const msg=S.strava.msg || (last?t(`Dernière synchronisation ${last}.`,`Last synced ${last}.`):t("Pas encore synchronisé.","Not synced yet."));
+  const reconnect = S.strava.err && window.__STANDALONE && S.strava.code==="api_auth";
+  const label = reconnect ? t("Reconnecter Strava","Reconnect Strava") : (S.set.stravaSync||window.__STANDALONE ? t("Synchroniser maintenant","Sync now") : t("Connecter Strava","Connect Strava"));
+  return shell(`<button class="btn small" id="strava-sync" data-reconnect="${reconnect?1:""}" ${S.strava.busy?"disabled":""}>${label}</button>`, msg, S.strava.err);
+}
+
+function stravaSetup(){
+  const host=location.hostname, site=location.origin;
+  const row=(k,v,copy=true)=>`<div class="kv"><span class="k">${k}</span><span class="v mono">${esc(v)}</span>${copy?`<button class="icon-btn" data-copy="${esc(v)}">${t("Copier","Copy")}</button>`:"<span></span>"}</div>`;
+  return `<div class="setup stack">
+    <div class="step"><span class="n">1</span><div class="stack" style="gap:8px;min-width:0">
+      <b>${t("Crée ton app Strava (une seule fois, 2 min)","Create your Strava app (one time, 2 min)")}</b>
+      <span class="hint">${t("Strava demande à chaque utilisateur d'enregistrer sa propre app. Ouvre la page, puis remplis le formulaire avec ces valeurs :","Strava asks each user to register their own app. Open the page, then fill in the form with these values:")}</span>
+      <div class="kvs">${row(t("Nom de l'application","Application Name"),"Carnet de Forme")}${row(t("Catégorie","Category"),"Training",false)}${row(t("Site web","Website"),site)}${row("Authorization Callback Domain",host)}</div>
+      <div class="row"><a class="btn small" href="https://www.strava.com/settings/api" target="_blank" rel="noopener">${t("Ouvrir Strava API","Open Strava API")} ↗</a></div>
+    </div></div>
+    <div class="step"><span class="n">2</span><div class="stack" style="gap:8px;min-width:0">
+      <b>${t("Colle les identifiants affichés par Strava","Paste the credentials Strava shows you")}</b>
+      <div class="fields">
+        <div class="f"><label for="sa-id">Client ID</label><input id="sa-id" data-keep inputmode="numeric" autocomplete="off" placeholder="123456"></div>
+        <div class="f"><label for="sa-secret">Client Secret</label><input id="sa-secret" data-keep type="password" autocomplete="off" placeholder="••••••••"></div>
+      </div>
+      <div class="row"><button class="btn small" id="sa-save">${t("Enregistrer et connecter Strava","Save and connect Strava")}</button></div>
+      <span class="hint">${t("Ces identifiants sont enregistrés sur ton compte, visibles par toi seul. Ils n'apparaissent jamais dans le code du site.","These credentials are saved to your account, visible only to you. They never appear in the site's code.")}</span>
+    </div></div>
+  </div>`;
 }
 
 /* ============ application téléchargeable ============ */
@@ -808,7 +869,7 @@ function standaloneHTML(withData=true){
   const script=document.getElementById("app-script").textContent;
   const seed=withData&&S.acts.length ? JSON.stringify({acts:S.acts,plans:S.plans,set:S.set}).replace(/</g,"\\u003c") : "null";
   const fb="https://www.gstatic.com/firebasejs/10.12.2/";
-  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#14263A"><title>Carnet de Forme</title><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"><\/script><script src="${fb}firebase-app-compat.js"><\/script><script src="${fb}firebase-auth-compat.js"><\/script><script src="${fb}firebase-firestore-compat.js"><\/script><script src="firebase-config.js"><\/script><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font-size:14px}img{max-width:100%}[hidden]{display:none!important}</style><style id="app-style">${style}</style></head><body><div id="app-root">${INITIAL_MARKUP}</div><script>window.__STANDALONE=true;window.__SEED=${seed};<\/script><script id="app-script">${script}<\/script></body></html>`;
+  return `<!doctype html><html lang="${LANG}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#14263A"><title>Carnet de Forme</title><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"><\/script><script src="${fb}firebase-app-compat.js"><\/script><script src="${fb}firebase-auth-compat.js"><\/script><script src="${fb}firebase-firestore-compat.js"><\/script><script src="firebase-config.js"><\/script><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font-size:14px}img{max-width:100%}[hidden]{display:none!important}</style><style id="app-style">${style}</style></head><body><div id="app-root">${INITIAL_MARKUP}</div><script>window.__STANDALONE=true;window.__SEED=${seed};<\/script><script id="app-script">${script}<\/script></body></html>`;
 }
 const SW_JS=`const C="carnet-forme-v2";
 self.addEventListener("install",e=>{e.waitUntil(caches.open(C).then(c=>c.addAll(["./","./index.html","./manifest.webmanifest","./icon-192.png","./icon-512.png"])));self.skipWaiting();});
@@ -818,13 +879,15 @@ e.respondWith(fetch(e.request).then(res=>{const cp=res.clone();caches.open(C).th
 const FN_JS=`// Fonction Netlify : échange et rafraîchit les jetons Strava, relaie la liste d'activités.
 // Variables d'environnement à définir sur Netlify : STRAVA_CLIENT_ID et STRAVA_CLIENT_SECRET.
 exports.handler = async (event) => {
-  const id = process.env.STRAVA_CLIENT_ID, secret = process.env.STRAVA_CLIENT_SECRET;
+  // Les identifiants viennent des variables Netlify si elles existent, sinon de l'app (enregistrés sur ton compte Firebase).
+  const envId = process.env.STRAVA_CLIENT_ID, envSecret = process.env.STRAVA_CLIENT_SECRET;
   const json = (statusCode, body) => ({ statusCode, headers: { "content-type": "application/json", "cache-control": "no-store" }, body: JSON.stringify(body) });
-  if (!id || !secret) return json(500, { error: "missing_env" });
   const q = event.queryStringParameters || {};
-  if (event.httpMethod === "GET" && q.action === "config") return json(200, { clientId: id });
+  if (event.httpMethod === "GET" && q.action === "config") return json(200, { clientId: envId || null, setup: !(envId && envSecret) });
   if (event.httpMethod === "POST") {
     let b = {}; try { b = JSON.parse(event.body || "{}"); } catch (e) {}
+    const id = envId || String(b.client_id || ""), secret = envSecret || String(b.client_secret || "");
+    if (!id || !secret) return json(400, { error: "missing_credentials" });
     const grant = b.action === "exchange" ? { grant_type: "authorization_code", code: b.code }
                 : b.action === "refresh" ? { grant_type: "refresh_token", refresh_token: b.refresh_token } : null;
     if (!grant) return json(400, { error: "bad_request" });
@@ -874,19 +937,15 @@ et récupère automatiquement tes activités Garmin via Strava.
           allow read, write: if request.auth != null && request.auth.uid == uid;
         }
 
-2. APPLICATION STRAVA (5 min, gratuit)
-   a. Va sur https://www.strava.com/settings/api et crée une application.
-      - Site web : l'adresse de ton site Netlify
-      - Authorization Callback Domain : le domaine seul, ex. gilded-cucurucho-1204fa.netlify.app
-   b. Note le « Client ID » et le « Client Secret ».
-   c. Vérifie que ta montre est reliée à Strava :
-      Garmin Connect → Paramètres → Applications partenaires → Strava.
+2. STRAVA : RIEN À FAIRE ICI
+   La configuration se fait dans l'app (onglet Activités) : elle ouvre la page Strava API,
+   affiche les valeurs à copier et enregistre ton Client ID / Client Secret sur ton compte.
+   Vérifie seulement que ta montre est reliée à Strava :
+   Garmin Connect → Paramètres → Applications partenaires → Strava.
 
-3. VARIABLES NETLIFY
-   Netlify → ton site → Site configuration → Environment variables → ajoute :
-      STRAVA_CLIENT_ID     = (ton Client ID)
-      STRAVA_CLIENT_SECRET = (ton Client Secret)
-   Le secret reste côté serveur : il n'apparaît jamais dans la page.
+3. VARIABLES NETLIFY : FACULTATIVES
+   Si tu préfères, tu peux mettre STRAVA_CLIENT_ID et STRAVA_CLIENT_SECRET dans
+   Netlify → Site configuration → Environment variables. Elles remplacent alors la saisie dans l'app.
 
 4. DÉPLOIEMENT
    Le glisser-déposer (Netlify Drop ou « Deploys » → déposer un dossier) ne publie pas la fonction
@@ -925,40 +984,43 @@ async function buildPackage(withData=true){
 }
 async function downloadApp(){
   if(!S.dl||!window.JSZip) return;
-  const btns=[$("#dl-app"),$("#dl-app-2")].filter(Boolean); btns.forEach(b=>{b.disabled=true;b.textContent="Préparation…";});
+  const btns=[$("#dl-app"),$("#dl-app-2")].filter(Boolean); btns.forEach(b=>{b.disabled=true;b.textContent=t("Préparation…","Preparing…");});
   try{
     const data=await (await buildPackage(true)).generateAsync({type:"blob"});
     const r=await S.dl.save({filename:"carnet-de-forme.zip",data});
-    if(r&&r.status==="saved") toast("Application téléchargée. Suis LISEZMOI.txt pour la mettre en ligne.");
-  }catch(e){ if(e?.code==="unavailable"){ S.dl=null; $("#dl-app").hidden=true; } else toast("Téléchargement impossible pour le moment. Réessaie."); }
-  btns.forEach(b=>{b.disabled=false;b.textContent="Télécharger l'app";});
+    if(r&&r.status==="saved") toast(t("Application téléchargée. Suis LISEZMOI.txt pour la mettre en ligne.","App downloaded. Follow LISEZMOI.txt to put it online."));
+  }catch(e){ if(e?.code==="unavailable"){ S.dl=null; $("#dl-app").hidden=true; } else toast(t("Téléchargement impossible pour le moment. Réessaie.","Download failed. Try again.")); }
+  btns.forEach(b=>{b.disabled=false;b.textContent=t("Télécharger l'app","Download app");});
 }
 if(window.__STANDALONE){
   if("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(()=>{});
   window.addEventListener("beforeinstallprompt",e=>{ e.preventDefault(); S.installEvt=e; $("#install-app").hidden=false; });
-  window.addEventListener("appinstalled",()=>{ $("#install-app").hidden=true; toast("Application installée."); });
+  window.addEventListener("appinstalled",()=>{ $("#install-app").hidden=true; toast(t("Application installée.","App installed.")); });
 }
 document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible" && S.set.stravaSync && Date.now()-Date.parse(S.set.stravaSync)>15*60e3 && S.autoSynced){ S.autoSynced=false; maybeAutoSync(); } });
 
 /* ============ rendu ============ */
 function render(){
   if(!S.actsReady && !S.timedOut) return;
-  $("#today-line").textContent = `${DAYS_L[(today0().getDay()+6)%7]} ${fmtDate(today0())} · semaine ${isoWeek(today0())}`;
-  $("#demo-banner").innerHTML = isDemo() ? `<div class="banner"><span><b>Données d'exemple.</b> Importe ton export Garmin pour voir tes propres séances.</span><button class="btn small" data-go="acts">Importer</button></div>` : "";
+  $("#today-line").textContent = `${DAYS_L()[(today0().getDay()+6)%7]} ${fmtDate(today0())} · ${t("semaine","week")} ${isoWeek(today0())}`;
+  $("#demo-banner").innerHTML = isDemo() ? `<div class="banner"><span><b>${t("Données d'exemple.","Sample data.")}</b> ${t("Importe ton export Garmin ou connecte Strava pour voir tes propres séances.","Import your Garmin export or connect Strava to see your own sessions.")}</span><button class="btn small" data-go="acts">${t("Importer","Import")}</button></div>` : "";
   const fl=$("#fb-login"); if(fl) fl.hidden=!(S.fb&&S.fb.state==="out");
   document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.tab===S.tab));
   const v=$("#view");
   Object.values(charts).forEach(c=>c.destroy()); for(const k in charts) delete charts[k];
+  const kept={}; v.querySelectorAll("[data-keep]").forEach(i=>{ if(i.value) kept[i.id]=i.value; });
   v.innerHTML = ({dash:viewDash,plan:viewPlan,acts:viewActs,evo:viewEvo,set:viewSet})[S.tab]();
   if(S.tab==="dash") drawFormChart("c-form",56);
   if(S.tab==="evo"){ drawVolume(); drawFormChart("c-form2",120); drawTrend(); }
   if(S.tab==="acts") bindDrop();
+  for(const id in kept){ const i=document.getElementById(id); if(i) i.value=kept[id]; }
 }
 function accountBlock(){
-  if(!S.fb||S.fb.state==="noconfig") return `<p class="muted" style="margin:0">Synchronisation désactivée : remplis firebase-config.js avec la configuration de ton projet Firebase, puis redéploie.</p>`;
-  if(S.fb.state!=="in") return `<p class="muted" style="margin:0">Connecte-toi avec Google pour retrouver tes séances sur tous tes appareils.</p><div class="row"><button class="btn small" id="fb-login-3">Se connecter avec Google</button></div>`;
-  return `<p class="muted" style="margin:0">Connecté avec <b>${esc(S.fb.user.email||S.fb.user.displayName||"Google")}</b>. ${S.stravaTok?"Strava relié"+(S.stravaTok.athlete?.firstname?` (${esc(S.stravaTok.athlete.firstname)})`:"")+".":"Strava non relié."}</p>
-    <div class="row"><button class="btn small ghost" id="fb-logout">Se déconnecter</button>${S.stravaTok?`<button class="btn small ghost" id="strava-unlink">Déconnecter Strava</button>`:""}</div>`;
+  if(!S.fb||S.fb.state==="noconfig") return `<p class="muted" style="margin:0">${t("Synchronisation désactivée : remplis firebase-config.js avec la configuration de ton projet Firebase, puis redéploie.","Sync is off: fill in firebase-config.js with your Firebase project configuration, then redeploy.")}</p>`;
+  if(S.fb.state!=="in") return `<p class="muted" style="margin:0">${t("Connecte-toi avec Google pour retrouver tes séances sur tous tes appareils.","Sign in with Google to get your sessions on all your devices.")}</p><div class="row"><button class="btn small" id="fb-login-3">${t("Se connecter avec Google","Sign in with Google")}</button></div>`;
+  const fn=S.stravaTok?.athlete?.firstname?` (${esc(S.stravaTok.athlete.firstname)})`:"";
+  return `<p class="muted" style="margin:0">${t("Connecté avec","Signed in as")} <b>${esc(S.fb.user.email||S.fb.user.displayName||"Google")}</b>. ${S.stravaTok?t("Strava relié","Strava linked")+fn+".":t("Strava non relié.","Strava not linked.")}</p>
+    <div class="row"><button class="btn small ghost" id="fb-logout">${t("Se déconnecter","Sign out")}</button>${S.stravaTok?`<button class="btn small ghost" id="strava-unlink">${t("Déconnecter Strava","Unlink Strava")}</button>`:""}${S.stravaNeedsApp&&S.stravaApp?`<button class="btn small ghost" id="strava-app-reset">${t("Modifier l'app Strava","Change Strava app")}</button>`:""}</div>`;
 }
 function isoWeek(d){ const x=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())); const n=x.getUTCDay()||7; x.setUTCDate(x.getUTCDate()+4-n); const y=new Date(Date.UTC(x.getUTCFullYear(),0,1)); return Math.ceil(((x-y)/864e5+1)/7); }
 
@@ -966,54 +1028,54 @@ function actRow(a,actions=true){
   const p=paceStr(a.sport,a); const d=parseDay(a.date);
   return `<div class="act"><span class="sw" style="background:${sc(a.sport)}"></span>
     <div style="min-width:0"><div class="t">${esc(a.title)}</div>
-    <div class="m"><span>${fmtDate(d)}</span><span>${fmtDur(a.dur)}</span>${a.dist?`<span>${fmtKm(a.dist)} km</span>`:""}${p?`<span>${p}</span>`:""}${a.hr?`<span>♥ ${Math.round(a.hr)}</span>`:""}<span title="Charge d'entraînement">${Math.round(load(a))} pts</span></div></div>
-    ${actions&&!isDemo()?`<div class="side"><button class="icon-btn" data-edit-act="${a.id}" aria-label="Modifier">Modifier</button></div>`:"<span></span>"}</div>`;
+    <div class="m"><span>${fmtDate(d)}</span><span>${fmtDur(a.dur)}</span>${a.dist?`<span>${fmtKm(a.dist)} km</span>`:""}${p?`<span>${p}</span>`:""}${a.hr?`<span>♥ ${Math.round(a.hr)}</span>`:""}<span title="${t("Charge d'entraînement","Training load")}">${Math.round(load(a))} pts</span></div></div>
+    ${actions&&!isDemo()?`<div class="side"><button class="icon-btn" data-edit-act="${a.id}">${t("Modifier","Edit")}</button></div>`:"<span></span>"}</div>`;
 }
 function viewDash(){
-  const acts=ACTS(), plans=PLANS(); const t=today0(); const m=metrics(acts); const sw=startOfWeek(t);
+  const acts=ACTS(), plans=PLANS(); const td=today0(); const m=metrics(acts); const sw=startOfWeek(td);
   const wk=acts.filter(a=>parseDay(a.date)>=sw); const wSec=wk.reduce((s,a)=>s+a.dur,0); const wKm=wk.reduce((s,a)=>s+(a.dist||0),0);
   const goal=(S.set.goalH||0)*3600; const pct=goal?Math.min(100,wSec/goal*100):0;
   const [ac,al]=acwrState(m.histDays>=21?m.acwr:null); const [tc,tl]=tsbState(m.tsb);
   const adv=advice(acts,plans);
-  const upcoming=plans.filter(p=>p.date>=dayKey(t)).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,4);
+  const upcoming=plans.filter(p=>p.date>=dayKey(td)).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,4);
   const recent=[...acts].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);
   return `<div class="stack">
   <div class="kpis">
-    <div class="kpi"><span class="label">Volume semaine</span><span class="v">${fmtH(wSec)}<small>h</small></span>${goal?`<div class="bar"><i style="width:${pct}%"></i></div><span class="s">objectif ${S.set.goalH} h</span>`:`<span class="s">${wk.length} séance(s)</span>`}</div>
-    <div class="kpi"><span class="label">Séances · distance</span><span class="v">${wk.length}<small>· ${fmtKm(wKm)} km</small></span><span class="s">depuis lundi</span></div>
-    <div class="kpi"><span class="label">Charge 7 j / 28 j</span><span class="v">${m.acwr!=null?m.acwr.toFixed(2).replace(".",","):"—"}</span><span class="pill ${ac}">${al}</span></div>
-    <div class="kpi"><span class="label">Fraîcheur (TSB)</span><span class="v">${m.tsb>0?"+":""}${Math.round(m.tsb)}</span><span class="pill ${tc}">${tl}</span></div>
+    <div class="kpi"><span class="label">${t("Volume semaine","Weekly volume")}</span><span class="v">${fmtH(wSec)}<small>h</small></span>${goal?`<div class="bar"><i style="width:${pct}%"></i></div><span class="s">${t("objectif","goal")} ${S.set.goalH} h</span>`:`<span class="s">${wk.length} ${t("séance(s)","session(s)")}</span>`}</div>
+    <div class="kpi"><span class="label">${t("Séances · distance","Sessions · distance")}</span><span class="v">${wk.length}<small>· ${fmtKm(wKm)} km</small></span><span class="s">${t("depuis lundi","since Monday")}</span></div>
+    <div class="kpi"><span class="label">${t("Charge 7 j / 28 j","Load 7 d / 28 d")}</span><span class="v">${m.acwr!=null?m.acwr.toFixed(2).replace(".",DEC()):"—"}</span><span class="pill ${ac}">${al}</span></div>
+    <div class="kpi"><span class="label">${t("Fraîcheur (TSB)","Freshness (TSB)")}</span><span class="v">${m.tsb>0?"+":""}${Math.round(m.tsb)}</span><span class="pill ${tc}">${tl}</span></div>
   </div>
   <div class="grid g2">
     <section class="card stack" aria-labelledby="h-adv">
-      <div class="row between"><h2 id="h-adv">Conseils du jour</h2>${S.sample?`<button class="btn small ghost" id="ai-btn" ${S.aiBusy?"disabled":""}>${S.aiBusy?"Analyse…":"Analyse du coach IA"}</button>`:""}</div>
+      <div class="row between"><h2 id="h-adv">${t("Conseils du jour","Today's advice")}</h2>${S.sample?`<button class="btn small ghost" id="ai-btn" ${S.aiBusy?"disabled":""}>${S.aiBusy?t("Analyse…","Analyzing…"):t("Analyse du coach IA","AI coach analysis")}</button>`:""}</div>
       <div class="ai-out" id="ai-out">${esc(S.aiText)}</div>
       <div class="advice">${adv.map(a=>`<div class="adv ${a.lvl}"><b></b><div><h4>${esc(a.t)}</h4><p>${esc(a.b)}</p></div></div>`).join("")}</div>
     </section>
     <div class="stack">
       <section class="card stack">
-        <div class="row between"><h2>Forme &amp; fatigue</h2><span class="label">8 semaines</span></div>
-        <div class="legend"><span><i class="sw" style="background:var(--ink)"></i>Forme (CTL)</span><span><i class="sw" style="background:var(--s-course)"></i>Fatigue (ATL)</span><span><i class="sw" style="background:var(--s-natation);opacity:.5"></i>Fraîcheur (TSB)</span></div>
-        <div class="chartbox"><canvas id="c-form" aria-label="Courbes de forme et fatigue"></canvas></div>
+        <div class="row between"><h2>${t("Forme &amp; fatigue","Fitness &amp; fatigue")}</h2><span class="label">${t("8 semaines","8 weeks")}</span></div>
+        <div class="legend"><span><i class="sw" style="background:var(--ink)"></i>${t("Forme","Fitness")} (CTL)</span><span><i class="sw" style="background:var(--s-course)"></i>Fatigue (ATL)</span><span><i class="sw" style="background:var(--s-natation);opacity:.5"></i>${t("Fraîcheur","Freshness")} (TSB)</span></div>
+        <div class="chartbox"><canvas id="c-form" aria-label="${t("Courbes de forme et fatigue","Fitness and fatigue curves")}"></canvas></div>
       </section>
       <section class="card stack">
-        <div class="row between"><h2>À venir</h2><button class="btn small ghost" data-go="plan">Planning</button></div>
-        ${upcoming.length?`<div class="stack" style="gap:8px">${upcoming.map(p=>planItem(p)).join("")}</div>`:`<div class="empty">Rien de prévu. Ouvre le planning pour générer ta semaine.</div>`}
+        <div class="row between"><h2>${t("À venir","Coming up")}</h2><button class="btn small ghost" data-go="plan">${t("Planning","Plan")}</button></div>
+        ${upcoming.length?`<div class="stack" style="gap:8px">${upcoming.map(p=>planItem(p)).join("")}</div>`:`<div class="empty">${t("Rien de prévu. Ouvre le planning pour générer ta semaine.","Nothing planned. Open the plan to generate your week.")}</div>`}
       </section>
     </div>
   </div>
-  <section class="card"><div class="row between" style="margin-bottom:6px"><h2>Dernières activités</h2><button class="btn small ghost" data-go="acts">Tout voir</button></div>
-    <div class="list">${recent.map(a=>actRow(a)).join("")||`<div class="empty">Aucune activité.</div>`}</div></section>
+  <section class="card"><div class="row between" style="margin-bottom:6px"><h2>${t("Dernières activités","Recent activities")}</h2><button class="btn small ghost" data-go="acts">${t("Tout voir","See all")}</button></div>
+    <div class="list">${recent.map(a=>actRow(a)).join("")||`<div class="empty">${t("Aucune activité.","No activities.")}</div>`}</div></section>
   </div>`;
 }
 function planStatus(p,acts){
-  const t=dayKey(today0());
+  const tk=dayKey(today0());
   const done=acts.some(a=>a.date.slice(0,10)===p.date&&a.sport===p.sport);
-  if(done) return ["good","Fait"]; if(p.date<t) return ["bad","Manqué"]; if(p.date===t) return ["info","Aujourd'hui"]; return ["mut","Prévu"];
+  if(done) return ["good",t("Fait","Done")]; if(p.date<tk) return ["bad",t("Manqué","Missed")]; if(p.date===tk) return ["info",t("Aujourd'hui","Today")]; return ["mut",t("Prévu","Planned")];
 }
 function planItem(p){
   const [c,l]=planStatus(p,ACTS()); const d=parseDay(p.date);
-  return `<button class="item" style="--c:${sc(p.sport)}" data-edit-plan="${p.id}"><span class="it">${esc(p.title)}</span><span class="im"><span>${DAYS[(d.getDay()+6)%7]} ${d.getDate()}</span><span>${p.dur} min</span><span>${INT[p.int]||""}</span><span class="pill ${c}">${l}</span></span></button>`;
+  return `<button class="item" style="--c:${sc(p.sport)}" data-edit-plan="${p.id}"><span class="it">${esc(p.title)}</span><span class="im"><span>${DAYS()[(d.getDay()+6)%7]} ${d.getDate()}</span><span>${p.dur} min</span><span>${INT()[p.int]||""}</span><span class="pill ${c}">${l}</span></span></button>`;
 }
 function viewPlan(){
   const acts=ACTS(), plans=PLANS(); const mon=addDays(startOfWeek(today0()),S.weekOff*7); const tk=dayKey(today0());
@@ -1023,20 +1085,20 @@ function viewPlan(){
     const ps=plans.filter(p=>p.date===k); const as=acts.filter(a=>a.date.slice(0,10)===k);
     totPlan+=ps.reduce((s,p)=>s+(+p.dur||0),0); totDone+=as.reduce((s,a)=>s+a.dur/60,0);
     const unmatched=as.filter(a=>!ps.some(p=>p.sport===a.sport));
-    return `<div class="day ${k===tk?"today":""}"><div class="dh"><span class="dn">${DAYS[i]} ${d.getDate()}</span><span class="label">${MONTHS[d.getMonth()]}</span></div>
+    return `<div class="day ${k===tk?"today":""}"><div class="dh"><span class="dn">${DAYS()[i]} ${d.getDate()}</span><span class="label">${MONTHS()[d.getMonth()]}</span></div>
       ${ps.map(planItem).join("")}
-      ${unmatched.map(a=>`<div class="item done-act" style="--c:${sc(a.sport)}"><span class="it">${esc(a.title)}</span><span class="im"><span>${fmtDur(a.dur)}</span><span class="pill good">Réalisé</span></span></div>`).join("")}
-      ${!ps.length&&!as.length?`<span class="muted rest" style="font-size:13px">Repos</span>`:""}
-      <button class="addday" data-add-plan="${k}">+ Séance</button>
+      ${unmatched.map(a=>`<div class="item done-act" style="--c:${sc(a.sport)}"><span class="it">${esc(a.title)}</span><span class="im"><span>${fmtDur(a.dur)}</span><span class="pill good">${t("Réalisé","Done")}</span></span></div>`).join("")}
+      ${!ps.length&&!as.length?`<span class="muted rest" style="font-size:13px">${t("Repos","Rest")}</span>`:""}
+      <button class="addday" data-add-plan="${k}">+ ${t("Séance","Session")}</button>
     </div>`;
   }).join("");
-  const label = S.weekOff===0?"Cette semaine":S.weekOff===1?"Semaine prochaine":S.weekOff===-1?"Semaine dernière":`Semaine ${isoWeek(mon)}`;
+  const label = S.weekOff===0?t("Cette semaine","This week"):S.weekOff===1?t("Semaine prochaine","Next week"):S.weekOff===-1?t("Semaine dernière","Last week"):`${t("Semaine","Week")} ${isoWeek(mon)}`;
   return `<div class="stack">
     <div class="row between">
-      <div class="weeknav"><button class="btn small ghost" data-week="-1" aria-label="Semaine précédente">←</button><div><h2>${label}</h2><div class="muted" style="font-size:13px">${fmtDate(mon)} – ${fmtDate(addDays(mon,6))} · prévu ${Math.round(totPlan/60*10)/10} h · réalisé ${fmtH(totDone*60)} h</div></div><button class="btn small ghost" data-week="1" aria-label="Semaine suivante">→</button></div>
-      <div class="row"><button class="btn small ghost" id="clear-week">Vider la semaine</button><button class="btn small" id="gen-week">Proposer ma semaine</button></div>
+      <div class="weeknav"><button class="btn small ghost" data-week="-1" aria-label="${t("Semaine précédente","Previous week")}">←</button><div><h2>${label}</h2><div class="muted" style="font-size:13px">${fmtDate(mon)} – ${fmtDate(addDays(mon,6))} · ${t("prévu","planned")} ${String(Math.round(totPlan/60*10)/10).replace(".",DEC())} h · ${t("réalisé","done")} ${fmtH(totDone*60)} h</div></div><button class="btn small ghost" data-week="1" aria-label="${t("Semaine suivante","Next week")}">→</button></div>
+      <div class="row"><button class="btn small ghost" id="clear-week">${t("Vider la semaine","Clear week")}</button><button class="btn small" id="gen-week">${t("Proposer ma semaine","Suggest my week")}</button></div>
     </div>
-    <p class="hint" style="margin:0">« Proposer ma semaine » répartit tes sports selon tes 4 dernières semaines, avec un jour de repos (${DAYS_L[S.set.restDay??0]}), une séance intense par sport d'endurance et la sortie longue le week-end. La charge baisse automatiquement si tu es fatigué.</p>
+    <p class="hint" style="margin:0">${t(`« Proposer ma semaine » répartit tes sports selon tes 4 dernières semaines, avec un jour de repos (${DAYS_L()[S.set.restDay??0]}), une séance intense par sport d'endurance et la sortie longue le week-end. La charge baisse automatiquement si tu es fatigué.`,`“Suggest my week” spreads your sports based on your last 4 weeks, with a rest day (${DAYS_L()[S.set.restDay??0]}), one hard session per endurance sport and the long session at the weekend. Load drops automatically when you're fatigued.`)}</p>
     <div class="days">${cols}</div>
   </div>`;
 }
@@ -1047,40 +1109,41 @@ function viewActs(){
   return `<div class="stack">
   ${connCard()}
   <section class="card stack">
-    <div class="row between"><h2>Import manuel Garmin</h2><button class="btn small ghost" id="add-act">+ Saisie manuelle</button></div>
-    <div class="row"><a class="btn small" href="https://connect.garmin.com/modern/activities" target="_blank" rel="noopener">Ouvrir mes activités Garmin ↗</a><span class="hint">Fais défiler pour charger la période voulue, puis « Exporter CSV » en haut à droite.</span></div>
-    <div class="drop" id="drop"><b>Dépose le fichier exporté ici</b><span class="hint">CSV (liste d'activités), TCX ou GPX · les doublons sont ignorés</span><button class="btn small ghost" id="pick">Choisir des fichiers</button><span class="hint mono" id="import-status"></span></div>
-    <details><summary>Exporter une seule activité</summary><ol>
-      <li>Ouvre l'activité dans Garmin Connect, menu ⚙ → « Exporter au format TCX » (ou GPX).</li>
-      <li>Le format FIT (« Exporter l'original ») n'est pas lu : préfère TCX.</li>
-      <li>Réimporter un CSV plus récent ne crée pas de doublons, y compris avec les séances déjà reçues par Strava.</li>
+    <div class="row between"><h2>${t("Import manuel Garmin","Manual Garmin import")}</h2><button class="btn small ghost" id="add-act">+ ${t("Saisie manuelle","Add manually")}</button></div>
+    <div class="row"><a class="btn small" href="https://connect.garmin.com/modern/activities" target="_blank" rel="noopener">${t("Ouvrir mes activités Garmin","Open my Garmin activities")} ↗</a><span class="hint">${t("Fais défiler pour charger la période voulue, puis « Exporter CSV » en haut à droite.","Scroll to load the period you want, then “Export CSV” at the top right.")}</span></div>
+    <div class="drop" id="drop"><b>${t("Dépose le fichier exporté ici","Drop the exported file here")}</b><span class="hint">${t("CSV (liste d'activités), TCX ou GPX · les doublons sont ignorés","CSV (activity list), TCX or GPX · duplicates are skipped")}</span><button class="btn small ghost" id="pick">${t("Choisir des fichiers","Choose files")}</button><span class="hint mono" id="import-status"></span></div>
+    <details><summary>${t("Exporter une seule activité","Export a single activity")}</summary><ol>
+      <li>${t("Ouvre l'activité dans Garmin Connect, menu ⚙ → « Exporter au format TCX » (ou GPX).","Open the activity in Garmin Connect, ⚙ menu → “Export to TCX” (or GPX).")}</li>
+      <li>${t("Le format FIT (« Exporter l'original ») n'est pas lu : préfère TCX.","FIT files (“Export Original”) aren't supported: use TCX.")}</li>
+      <li>${t("Réimporter un CSV plus récent ne crée pas de doublons, y compris avec les séances déjà reçues par Strava.","Re-importing a newer CSV doesn't create duplicates, including sessions already received from Strava.")}</li>
     </ol></details>
   </section>
   <section class="card stack">
-    <div class="chips" role="group" aria-label="Filtrer par sport">
-      <button class="chip" data-filter="all" aria-pressed="${S.filter==="all"}">Tout · ${acts.length}</button>
+    <div class="chips" role="group" aria-label="${t("Filtrer par sport","Filter by sport")}">
+      <button class="chip" data-filter="all" aria-pressed="${S.filter==="all"}">${t("Tout","All")} · ${acts.length}</button>
       ${SK.filter(k=>counts[k]).map(k=>`<button class="chip" data-filter="${k}" aria-pressed="${S.filter===k}"><i class="sw" style="background:${sc(k)}"></i>${SPORTS[k].l} · ${counts[k]}</button>`).join("")}
     </div>
-    <div class="list">${shown.slice(0,200).map(a=>actRow(a)).join("")||`<div class="empty">Aucune activité pour l'instant.</div>`}</div>
-    ${shown.length>200?`<p class="hint">200 plus récentes affichées sur ${shown.length}.</p>`:""}
+    <div class="list">${shown.slice(0,200).map(a=>actRow(a)).join("")||`<div class="empty">${t("Aucune activité pour l'instant.","No activities yet.")}</div>`}</div>
+    ${shown.length>200?`<p class="hint">${t(`200 plus récentes affichées sur ${shown.length}.`,`Showing the 200 most recent of ${shown.length}.`)}</p>`:""}
   </section></div>`;
 }
 function viewEvo(){
-  const metricsBySport={course:[["speed","Allure (min/km)"],["hr","FC moyenne"],["dist","Distance / semaine"]],velo:[["speed","Vitesse (km/h)"],["hr","FC moyenne"],["dist","Distance / semaine"]],natation:[["speed","Allure (/100 m)"],["hr","FC moyenne"],["dist","Distance / semaine"]],renfo:[["time","Temps / semaine"],["hr","FC moyenne"]],basket:[["time","Temps / semaine"],["hr","FC moyenne"]],autre:[["time","Temps / semaine"],["hr","FC moyenne"]]};
+  const HR=t("FC moyenne","Average HR"), DW=t("Distance / semaine","Distance / week"), TW=t("Temps / semaine","Time / week");
+  const metricsBySport={course:[["speed",t("Allure (min/km)","Pace (min/km)")],["hr",HR],["dist",DW]],velo:[["speed",t("Vitesse (km/h)","Speed (km/h)")],["hr",HR],["dist",DW]],natation:[["speed",t("Allure (/100 m)","Pace (/100 m)")],["hr",HR],["dist",DW]],renfo:[["time",TW],["hr",HR]],basket:[["time",TW],["hr",HR]],autre:[["time",TW],["hr",HR]]};
   const opts=metricsBySport[S.evoSport]; if(!opts.some(o=>o[0]===S.evoMetric)) S.evoMetric=opts[0][0];
   const used=SK.filter(k=>ACTS().some(a=>a.sport===k));
   return `<div class="stack">
-  <section class="card stack"><div class="row between"><h2>Volume hebdomadaire</h2><span class="label">heures · 12 semaines</span></div>
+  <section class="card stack"><div class="row between"><h2>${t("Volume hebdomadaire","Weekly volume")}</h2><span class="label">${t("heures · 12 semaines","hours · 12 weeks")}</span></div>
     <div class="legend">${used.map(k=>`<span><i class="sw" style="background:${sc(k)}"></i>${SPORTS[k].l}</span>`).join("")}</div>
     <div class="chartbox"><canvas id="c-vol"></canvas></div></section>
-  <section class="card stack"><div class="row between"><h2>Forme, fatigue, fraîcheur</h2><span class="label">17 semaines</span></div>
-    <div class="legend"><span><i class="sw" style="background:var(--ink)"></i>Forme (CTL, moyenne 42 j)</span><span><i class="sw" style="background:var(--s-course)"></i>Fatigue (ATL, moyenne 7 j)</span><span><i class="sw" style="background:var(--s-natation);opacity:.5"></i>Fraîcheur = CTL − ATL</span></div>
+  <section class="card stack"><div class="row between"><h2>${t("Forme, fatigue, fraîcheur","Fitness, fatigue, freshness")}</h2><span class="label">${t("17 semaines","17 weeks")}</span></div>
+    <div class="legend"><span><i class="sw" style="background:var(--ink)"></i>${t("Forme (CTL, moyenne 42 j)","Fitness (CTL, 42-day average)")}</span><span><i class="sw" style="background:var(--s-course)"></i>${t("Fatigue (ATL, moyenne 7 j)","Fatigue (ATL, 7-day average)")}</span><span><i class="sw" style="background:var(--s-natation);opacity:.5"></i>${t("Fraîcheur","Freshness")} = CTL − ATL</span></div>
     <div class="chartbox"><canvas id="c-form2"></canvas></div>
-    <p class="hint" style="margin:0">Charge par séance = TRIMP (durée × intensité cardiaque, FC max ${S.set.hrMax} / repos ${S.set.hrRest}) ou, sans cardio, durée × ressenti (RPE).</p></section>
-  <section class="card stack"><div class="row between"><h2>Tendance par sport</h2></div>
+    <p class="hint" style="margin:0">${t(`Charge par séance = TRIMP (durée × intensité cardiaque, FC max ${S.set.hrMax} / repos ${S.set.hrRest}) ou, sans cardio, durée × ressenti (RPE).`,`Load per session = TRIMP (duration × heart-rate intensity, max HR ${S.set.hrMax} / resting ${S.set.hrRest}) or, without heart rate, duration × perceived effort (RPE).`)}</p></section>
+  <section class="card stack"><div class="row between"><h2>${t("Tendance par sport","Trend by sport")}</h2></div>
     <div class="row">
       <div class="f" style="flex:1;min-width:140px"><label for="evo-sport">Sport</label><select id="evo-sport">${(used.length?used:SK).map(k=>`<option value="${k}" ${k===S.evoSport?"selected":""}>${SPORTS[k].l}</option>`).join("")}</select></div>
-      <div class="f" style="flex:1;min-width:140px"><label for="evo-metric">Mesure</label><select id="evo-metric">${opts.map(([k,l])=>`<option value="${k}" ${k===S.evoMetric?"selected":""}>${l}</option>`).join("")}</select></div>
+      <div class="f" style="flex:1;min-width:140px"><label for="evo-metric">${t("Mesure","Metric")}</label><select id="evo-metric">${opts.map(([k,l])=>`<option value="${k}" ${k===S.evoMetric?"selected":""}>${l}</option>`).join("")}</select></div>
     </div>
     <div class="chartbox"><canvas id="c-trend"></canvas></div><p class="hint" id="trend-note" style="margin:0"></p></section>
   </div>`;
@@ -1088,25 +1151,27 @@ function viewEvo(){
 function viewSet(){
   const s=S.set;
   return `<div class="stack" style="max-width:640px">
-  <section class="card stack"><h2>Profil cardio</h2>
+  <section class="card stack"><h2>${t("Langue","Language")}</h2>
+    <div class="fields"><div class="f"><label for="s-lang">${t("Langue de l'application","App language")}</label><select id="s-lang"><option value="fr" ${LANG==="fr"?"selected":""}>Français</option><option value="en" ${LANG==="en"?"selected":""}>English</option></select></div></div></section>
+  <section class="card stack"><h2>${t("Profil cardio","Heart-rate profile")}</h2>
     <div class="fields">
-      <div class="f"><label for="s-hrmax">FC max (bpm)</label><input id="s-hrmax" type="number" inputmode="numeric" min="120" max="230" value="${s.hrMax}"></div>
-      <div class="f"><label for="s-hrrest">FC repos (bpm)</label><input id="s-hrrest" type="number" inputmode="numeric" min="30" max="100" value="${s.hrRest}"></div>
+      <div class="f"><label for="s-hrmax">${t("FC max (bpm)","Max HR (bpm)")}</label><input id="s-hrmax" type="number" inputmode="numeric" min="120" max="230" value="${s.hrMax}"></div>
+      <div class="f"><label for="s-hrrest">${t("FC repos (bpm)","Resting HR (bpm)")}</label><input id="s-hrrest" type="number" inputmode="numeric" min="30" max="100" value="${s.hrRest}"></div>
     </div>
-    <p class="hint" style="margin:0">Ta montre Garmin les affiche dans Garmin Connect → Statistiques de santé. Elles servent au calcul de la charge et de l'intensité.</p></section>
-  <section class="card stack"><h2>Objectifs</h2>
+    <p class="hint" style="margin:0">${t("Ta montre Garmin les affiche dans Garmin Connect → Statistiques de santé. Elles servent au calcul de la charge et de l'intensité.","Your Garmin watch shows them in Garmin Connect → Health Stats. They're used to compute training load and intensity.")}</p></section>
+  <section class="card stack"><h2>${t("Objectifs","Goals")}</h2>
     <div class="fields">
-      <div class="f"><label for="s-goalh">Heures par semaine</label><input id="s-goalh" type="number" step="0.5" min="0" max="40" value="${s.goalH}"></div>
-      <div class="f"><label for="s-rest">Jour de repos</label><select id="s-rest">${DAYS_L.map((d,i)=>`<option value="${i}" ${i===(+s.restDay||0)?"selected":""}>${d}</option>`).join("")}</select></div>
-      <div class="f full"><label for="s-goal">Objectif principal (pour le coach IA)</label><input id="s-goal" type="text" placeholder="ex. Triathlon distance olympique en juin, 10 km sous 45 min" value="${esc(s.goal)}"></div>
+      <div class="f"><label for="s-goalh">${t("Heures par semaine","Hours per week")}</label><input id="s-goalh" type="number" step="0.5" min="0" max="40" value="${s.goalH}"></div>
+      <div class="f"><label for="s-rest">${t("Jour de repos","Rest day")}</label><select id="s-rest">${DAYS_L().map((d,i)=>`<option value="${i}" ${i===(+s.restDay||0)?"selected":""}>${d}</option>`).join("")}</select></div>
+      <div class="f full"><label for="s-goal">${t("Objectif principal (pour le coach IA)","Main goal (for the AI coach)")}</label><input id="s-goal" type="text" placeholder="${t("ex. Triathlon distance olympique en juin, 10 km sous 45 min","e.g. Olympic-distance triathlon in June, 10K under 45 min")}" value="${esc(s.goal)}"></div>
     </div></section>
   <section class="card stack"><h2>Application</h2>
-    ${window.__STANDALONE ? accountBlock() : `<p class="muted" style="margin:0">« Télécharger l'app » crée un dossier prêt pour Netlify, comme tes autres apps : connexion Google via ton projet Firebase, synchro Strava automatique, installable sur Android. Le fichier LISEZMOI.txt détaille la mise en ligne. Tes séances actuelles sont incluses.</p>`}
-    ${S.dl?`<div class="row"><button class="btn small" id="dl-app-2">Télécharger l'app</button></div>`:""}
+    ${window.__STANDALONE ? accountBlock() : `<p class="muted" style="margin:0">${t("« Télécharger l'app » crée un dossier prêt pour Netlify, comme tes autres apps : connexion Google via ton projet Firebase, synchro Strava automatique, installable sur Android. Le fichier LISEZMOI.txt détaille la mise en ligne. Tes séances actuelles sont incluses.","“Download app” creates a Netlify-ready folder: Google sign-in through your Firebase project, automatic Strava sync, installable on Android. LISEZMOI.txt explains how to put it online. Your current sessions are included.")}</p>`}
+    ${S.dl?`<div class="row"><button class="btn small" id="dl-app-2">${t("Télécharger l'app","Download app")}</button></div>`:""}
   </section>
-  <section class="card stack"><h2>Données</h2>
-    <p class="muted" style="margin:0">${S.mode==="db"?`${S.acts.length} activités et ${S.plans.length} séances planifiées enregistrées sur ton compte, visibles par toi seul, sur tous tes appareils.`:(window.__STANDALONE?`${S.acts.length} activités enregistrées sur cet appareil uniquement. Connecte-toi pour les synchroniser.`:`${S.acts.length} activités enregistrées dans ce navigateur uniquement.`)}</p>
-    <div class="row" id="wipe-zone"><button class="btn small ghost" id="wipe">Effacer toutes mes données</button></div>
+  <section class="card stack"><h2>${t("Données","Data")}</h2>
+    <p class="muted" style="margin:0">${S.mode==="db"?t(`${S.acts.length} activités et ${S.plans.length} séances planifiées enregistrées sur ton compte, visibles par toi seul, sur tous tes appareils.`,`${S.acts.length} activities and ${S.plans.length} planned sessions saved to your account, visible only to you, on all your devices.`):(window.__STANDALONE?t(`${S.acts.length} activités enregistrées sur cet appareil uniquement. Connecte-toi pour les synchroniser.`,`${S.acts.length} activities saved on this device only. Sign in to sync them.`):t(`${S.acts.length} activités enregistrées dans ce navigateur uniquement.`,`${S.acts.length} activities saved in this browser only.`))}</p>
+    <div class="row" id="wipe-zone"><button class="btn small ghost" id="wipe">${t("Effacer toutes mes données","Delete all my data")}</button></div>
   </section></div>`;
 }
 
@@ -1121,9 +1186,9 @@ function baseOpts(){
 function drawFormChart(id,days){
   const el=document.getElementById(id); if(!el||!window.Chart) return;
   const ser=dailySeries(ACTS(),days);
-  charts[id]=new Chart(el,{data:{labels:ser.map(x=>`${x.d.getDate()}/${x.d.getMonth()+1}`),datasets:[
-    {type:"bar",label:"Fraîcheur",data:ser.map(x=>+x.tsb.toFixed(1)),backgroundColor:cssVar("--s-natation")+"66",borderWidth:0,order:3},
-    {type:"line",label:"Forme",data:ser.map(x=>+x.ctl.toFixed(1)),borderColor:cssVar("--ink"),borderWidth:2.2,pointRadius:0,tension:.3,order:1},
+  charts[id]=new Chart(el,{data:{labels:ser.map(x=>t(`${x.d.getDate()}/${x.d.getMonth()+1}`,`${x.d.getMonth()+1}/${x.d.getDate()}`)),datasets:[
+    {type:"bar",label:t("Fraîcheur","Freshness"),data:ser.map(x=>+x.tsb.toFixed(1)),backgroundColor:cssVar("--s-natation")+"66",borderWidth:0,order:3},
+    {type:"line",label:t("Forme","Fitness"),data:ser.map(x=>+x.ctl.toFixed(1)),borderColor:cssVar("--ink"),borderWidth:2.2,pointRadius:0,tension:.3,order:1},
     {type:"line",label:"Fatigue",data:ser.map(x=>+x.atl.toFixed(1)),borderColor:cssVar("--s-course"),borderWidth:1.6,pointRadius:0,tension:.3,order:2}
   ]},options:baseOpts()});
 }
@@ -1134,34 +1199,34 @@ function drawVolume(){
   const ds=SK.filter(k=>acts.some(a=>a.sport===k)).map(k=>({label:SPORTS[k].l,backgroundColor:cssVar(SPORTS[k].v),borderRadius:2,
     data:wk.map(w=>+(acts.filter(a=>a.sport===k&&parseDay(a.date)>=w&&parseDay(a.date)<addDays(w,7)).reduce((s,a)=>s+a.dur,0)/3600).toFixed(2))}));
   const o=baseOpts(); o.scales.x.stacked=true; o.scales.y.stacked=true; o.scales.y.ticks.callback=v=>v+" h";
-  if(S.set.goalH){ ds.push({type:"line",label:"Objectif",data:wk.map(()=>S.set.goalH),borderColor:cssVar("--muted"),borderDash:[4,4],borderWidth:1.2,pointRadius:0,stack:"goal"}); }
-  charts.vol=new Chart(el,{type:"bar",data:{labels:wk.map(w=>`S${isoWeek(w)}`),datasets:ds},options:o});
+  if(S.set.goalH){ ds.push({type:"line",label:t("Objectif","Goal"),data:wk.map(()=>S.set.goalH),borderColor:cssVar("--muted"),borderDash:[4,4],borderWidth:1.2,pointRadius:0,stack:"goal"}); }
+  charts.vol=new Chart(el,{type:"bar",data:{labels:wk.map(w=>`${t("S","W")}${isoWeek(w)}`),datasets:ds},options:o});
 }
 function drawTrend(){
   const el=$("#c-trend"); if(!el||!window.Chart) return;
   const sp=S.evoSport, mt=S.evoMetric; const acts=ACTS().filter(a=>a.sport===sp).sort((a,b)=>a.date.localeCompare(b.date));
   const o=baseOpts(); const col=cssVar(SPORTS[sp].v); let data,labels,type="line",note="";
   if(mt==="dist"||mt==="time"){
-    const wk=weeksBack(16); labels=wk.map(w=>`S${isoWeek(w)}`); type="bar";
+    const wk=weeksBack(16); labels=wk.map(w=>`${t("S","W")}${isoWeek(w)}`); type="bar";
     data=wk.map(w=>{ const xs=acts.filter(a=>parseDay(a.date)>=w&&parseDay(a.date)<addDays(w,7)); return mt==="dist"?+xs.reduce((s,a)=>s+(a.dist||0),0).toFixed(1):+(xs.reduce((s,a)=>s+a.dur,0)/3600).toFixed(2); });
     o.scales.y.ticks.callback=v=>v+(mt==="dist"?" km":" h");
   } else {
     const xs=acts.filter(a=>parseDay(a.date)>=addDays(today0(),-120)).filter(a=>mt==="hr"?a.hr:(a.dist&&a.dur));
-    labels=xs.map(a=>{const d=parseDay(a.date);return `${d.getDate()}/${d.getMonth()+1}`;});
+    labels=xs.map(a=>{const d=parseDay(a.date);return t(`${d.getDate()}/${d.getMonth()+1}`,`${d.getMonth()+1}/${d.getDate()}`);});
     data=xs.map(a=>{
       if(mt==="hr") return Math.round(a.hr);
       if(sp==="course") return +(a.dur/60/a.dist).toFixed(2);
       if(sp==="natation") return +(a.dur/(a.dist*10)/60).toFixed(2);
       return +(a.dist/(a.dur/3600)).toFixed(1);
     });
-    if(mt==="speed"&&(sp==="course"||sp==="natation")){ o.scales.y.reverse=true; o.scales.y.ticks.callback=v=>`${Math.floor(v)}:${pad(Math.round((v%1)*60)%60)}`; note="Axe inversé : plus la courbe monte, plus tu vas vite. La moyenne glissante (trait épais) lisse les écarts entre séances faciles et intenses."; }
-    else note = mt==="hr" ? "À allure égale, une FC moyenne qui baisse signale un gain d'endurance." : "Moyenne glissante sur 5 séances en trait épais.";
+    if(mt==="speed"&&(sp==="course"||sp==="natation")){ o.scales.y.reverse=true; o.scales.y.ticks.callback=v=>`${Math.floor(v)}:${pad(Math.round((v%1)*60)%60)}`; note=t("Axe inversé : plus la courbe monte, plus tu vas vite. La moyenne glissante (trait épais) lisse les écarts entre séances faciles et intenses.","Inverted axis: the higher the curve, the faster you go. The rolling average (thick line) smooths out easy vs hard sessions."); }
+    else note = mt==="hr" ? t("À allure égale, une FC moyenne qui baisse signale un gain d'endurance.","At the same pace, a falling average heart rate means improved endurance.") : t("Moyenne glissante sur 5 séances en trait épais.","Thick line: 5-session rolling average.");
     o.plugins.tooltip.callbacks={title:(it)=>xs[it[0].dataIndex]?.title||""};
   }
-  const sets=[{label:"Valeur",data,backgroundColor:col+(type==="bar"?"":"55"),borderColor:col,borderWidth:type==="bar"?0:1,pointRadius:type==="bar"?0:3,pointBackgroundColor:col,showLine:false,borderRadius:2}];
-  if(type==="line"&&data.length>=5){ sets.push({label:"Moyenne",data:data.map((_,i)=>{ const w=data.slice(Math.max(0,i-4),i+1); return +(w.reduce((s,x)=>s+x,0)/w.length).toFixed(2); }),borderColor:col,borderWidth:2.5,pointRadius:0,tension:.35}); }
+  const sets=[{label:t("Valeur","Value"),data,backgroundColor:col+(type==="bar"?"":"55"),borderColor:col,borderWidth:type==="bar"?0:1,pointRadius:type==="bar"?0:3,pointBackgroundColor:col,showLine:false,borderRadius:2}];
+  if(type==="line"&&data.length>=5){ sets.push({label:t("Moyenne","Average"),data:data.map((_,i)=>{ const w=data.slice(Math.max(0,i-4),i+1); return +(w.reduce((s,x)=>s+x,0)/w.length).toFixed(2); }),borderColor:col,borderWidth:2.5,pointRadius:0,tension:.35}); }
   charts.trend=new Chart(el,{type,data:{labels,datasets:sets},options:o});
-  $("#trend-note").textContent = data.length?note:"Pas encore de données pour ce sport.";
+  $("#trend-note").textContent = data.length?note:t("Pas encore de données pour ce sport.","No data for this sport yet.");
 }
 
 /* ============ formulaires ============ */
@@ -1171,47 +1236,47 @@ const sportOpts = sel => SK.map(k=>`<option value="${k}" ${k===sel?"selected":""
 function openAct(a){
   const isNew=!a; a=a||{date:`${dayKey(today0())}T18:00`,sport:"course",title:"",dur:3600};
   const m=Math.round((a.dur||0)/60);
-  sheet(`<h2>${isNew?"Nouvelle activité":"Modifier l'activité"}</h2>
+  sheet(`<h2>${isNew?t("Nouvelle activité","New activity"):t("Modifier l'activité","Edit activity")}</h2>
   <form id="act-form" class="stack"><div class="fields">
-    <div class="f full"><label for="a-title">Titre</label><input id="a-title" value="${esc(a.title)}" placeholder="ex. Footing bords de Seine"></div>
+    <div class="f full"><label for="a-title">${t("Titre","Title")}</label><input id="a-title" value="${esc(a.title)}" placeholder="${t("ex. Footing bords de Seine","e.g. Easy run along the river")}"></div>
     <div class="f"><label for="a-sport">Sport</label><select id="a-sport">${sportOpts(a.sport)}</select></div>
     <div class="f"><label for="a-date">Date</label><input id="a-date" type="datetime-local" value="${a.date}" required></div>
-    <div class="f"><label for="a-dur">Durée (min)</label><input id="a-dur" type="number" inputmode="numeric" min="1" value="${m}" required></div>
+    <div class="f"><label for="a-dur">${t("Durée (min)","Duration (min)")}</label><input id="a-dur" type="number" inputmode="numeric" min="1" value="${m}" required></div>
     <div class="f"><label for="a-dist">Distance (km)</label><input id="a-dist" type="number" step="0.01" min="0" value="${a.dist??""}"></div>
-    <div class="f"><label for="a-hr">FC moyenne</label><input id="a-hr" type="number" inputmode="numeric" value="${a.hr??""}"></div>
-    <div class="f"><label for="a-rpe">Ressenti (1–10)</label><input id="a-rpe" type="number" min="1" max="10" value="${a.rpe??""}"></div>
+    <div class="f"><label for="a-hr">${t("FC moyenne","Average HR")}</label><input id="a-hr" type="number" inputmode="numeric" value="${a.hr??""}"></div>
+    <div class="f"><label for="a-rpe">${t("Ressenti (1–10)","Perceived effort (1–10)")}</label><input id="a-rpe" type="number" min="1" max="10" value="${a.rpe??""}"></div>
     <div class="f full"><label for="a-notes">Notes</label><textarea id="a-notes">${esc(a.notes||"")}</textarea></div>
   </div>
-  <p class="hint" style="margin:0">Sans cardio, le ressenti sert à estimer la charge (5 = modéré, 8+ = très dur).</p>
-  <div class="row between">${isNew?"<span></span>":`<button type="button" class="btn small ghost" id="a-del" data-id="${a.id}">Supprimer</button>`}<div class="row"><button type="button" class="btn ghost" data-close>Annuler</button><button class="btn" type="submit">Enregistrer</button></div></div>
+  <p class="hint" style="margin:0">${t("Sans cardio, le ressenti sert à estimer la charge (5 = modéré, 8+ = très dur).","Without heart rate, perceived effort is used to estimate load (5 = moderate, 8+ = very hard).")}</p>
+  <div class="row between">${isNew?"<span></span>":`<button type="button" class="btn small ghost" id="a-del" data-id="${a.id}">${t("Supprimer","Delete")}</button>`}<div class="row"><button type="button" class="btn ghost" data-close>${t("Annuler","Cancel")}</button><button class="btn" type="submit">${t("Enregistrer","Save")}</button></div></div>
   </form>`);
   $("#act-form").addEventListener("submit",async e=>{
     e.preventDefault();
     const n=v=>{ const x=parseFloat(v); return isNaN(x)?null:x; };
     const sp=$("#a-sport").value;
     const obj={...a,id:a.id||"m"+uid(),title:$("#a-title").value.trim()||SPORTS[sp].l,sport:sp,date:$("#a-date").value,dur:Math.round((n($("#a-dur").value)||0)*60),dist:n($("#a-dist").value),hr:n($("#a-hr").value),rpe:n($("#a-rpe").value),notes:$("#a-notes").value.trim(),src:a.src||"manuel"};
-    if(!obj.date||!obj.dur){ toast("Indique une date et une durée."); return; }
-    try{ await putAct(obj); closeSheet(); toast("Activité enregistrée."); }catch(err){ toast("Enregistrement impossible : réessaie."); }
+    if(!obj.date||!obj.dur){ toast(t("Indique une date et une durée.","Enter a date and a duration.")); return; }
+    try{ await putAct(obj); closeSheet(); toast(t("Activité enregistrée.","Activity saved.")); }catch(err){ toast(t("Enregistrement impossible : réessaie.","Couldn't save: try again.")); }
   });
 }
 function openPlan(p,dateK){
   const isNew=!p; p=p||{date:dateK||dayKey(today0()),sport:"course",title:"",dur:45,int:"facile",notes:""};
-  sheet(`<h2>${isNew?"Planifier une séance":"Séance planifiée"}</h2>
+  sheet(`<h2>${isNew?t("Planifier une séance","Plan a session"):t("Séance planifiée","Planned session")}</h2>
   <form id="plan-form" class="stack"><div class="fields">
-    <div class="f full"><label for="p-title">Séance</label><input id="p-title" value="${esc(p.title)}" placeholder="ex. 6 × 1000 m récup 2 min"></div>
+    <div class="f full"><label for="p-title">${t("Séance","Session")}</label><input id="p-title" value="${esc(p.title)}" placeholder="${t("ex. 6 × 1000 m récup 2 min","e.g. 6 × 1000 m, 2 min recovery")}"></div>
     <div class="f"><label for="p-sport">Sport</label><select id="p-sport">${sportOpts(p.sport)}</select></div>
     <div class="f"><label for="p-date">Date</label><input id="p-date" type="date" value="${p.date}" required></div>
-    <div class="f"><label for="p-dur">Durée prévue (min)</label><input id="p-dur" type="number" inputmode="numeric" min="5" value="${p.dur}"></div>
-    <div class="f"><label for="p-int">Intensité</label><select id="p-int">${Object.entries(INT).map(([k,l])=>`<option value="${k}" ${k===p.int?"selected":""}>${l}</option>`).join("")}</select></div>
+    <div class="f"><label for="p-dur">${t("Durée prévue (min)","Planned duration (min)")}</label><input id="p-dur" type="number" inputmode="numeric" min="5" value="${p.dur}"></div>
+    <div class="f"><label for="p-int">${t("Intensité","Intensity")}</label><select id="p-int">${Object.entries(INT()).map(([k,l])=>`<option value="${k}" ${k===p.int?"selected":""}>${l}</option>`).join("")}</select></div>
     <div class="f full"><label for="p-notes">Notes</label><textarea id="p-notes">${esc(p.notes||"")}</textarea></div>
   </div>
-  <p class="hint" style="margin:0">La séance passe en « Fait » dès qu'une activité du même sport est importée ce jour-là.</p>
-  <div class="row between">${isNew?"<span></span>":`<button type="button" class="btn small ghost" id="p-del" data-id="${p.id}">Supprimer</button>`}<div class="row"><button type="button" class="btn ghost" data-close>Annuler</button><button class="btn" type="submit">Enregistrer</button></div></div>
+  <p class="hint" style="margin:0">${t("La séance passe en « Fait » dès qu'une activité du même sport est importée ce jour-là.","The session turns “Done” as soon as an activity of the same sport is imported that day.")}</p>
+  <div class="row between">${isNew?"<span></span>":`<button type="button" class="btn small ghost" id="p-del" data-id="${p.id}">${t("Supprimer","Delete")}</button>`}<div class="row"><button type="button" class="btn ghost" data-close>${t("Annuler","Cancel")}</button><button class="btn" type="submit">${t("Enregistrer","Save")}</button></div></div>
   </form>`);
   $("#plan-form").addEventListener("submit",async e=>{
     e.preventDefault(); const sp=$("#p-sport").value;
     const obj={...p,id:(p.id&&!String(p.id).startsWith("dp"))?p.id:"p"+uid(),title:$("#p-title").value.trim()||SPORTS[sp].l,sport:sp,date:$("#p-date").value,dur:parseInt($("#p-dur").value)||45,int:$("#p-int").value,notes:$("#p-notes").value.trim(),gen:false};
-    try{ await putPlan(obj); closeSheet(); toast("Séance planifiée."); }catch(err){ toast("Enregistrement impossible : réessaie."); }
+    try{ await putPlan(obj); closeSheet(); toast(t("Séance planifiée.","Session planned.")); }catch(err){ toast(t("Enregistrement impossible : réessaie.","Couldn't save: try again.")); }
   });
 }
 
@@ -1219,13 +1284,13 @@ function openPlan(p,dateK){
 async function runAI(){
   if(!S.sample||S.aiBusy) return;
   S.aiBusy=true; S.aiText=""; render();
-  const acts=ACTS(), m=metrics(acts), t=today0();
+  const acts=ACTS(), m=metrics(acts), td=today0();
   const weeks=weeksBack(6).map(w=>{ const xs=acts.filter(a=>parseDay(a.date)>=w&&parseDay(a.date)<addDays(w,7)); const by={}; xs.forEach(a=>{ by[a.sport]=by[a.sport]||{n:0,h:0,km:0}; by[a.sport].n++; by[a.sport].h+=a.dur/3600; by[a.sport].km+=a.dist||0; });
     return `S${isoWeek(w)} : `+Object.entries(by).map(([k,v])=>`${SPORTS[k].l} ${v.n}× ${v.h.toFixed(1)}h${v.km?` ${v.km.toFixed(1)}km`:""}`).join(", ")||"rien"; });
   const recent=[...acts].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,12).map(a=>`${a.date.slice(0,10)} ${SPORTS[a.sport].l} ${fmtDur(a.dur)}${a.dist?" "+fmtKm(a.dist)+"km":""}${paceStr(a.sport,a)?" "+paceStr(a.sport,a):""}${a.hr?" FC"+Math.round(a.hr):""}${a.rpe?" RPE"+a.rpe:""}`);
-  const upcoming=PLANS().filter(p=>p.date>=dayKey(t)).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,10).map(p=>`${p.date} ${SPORTS[p.sport].l} ${p.dur}min ${INT[p.int]} « ${p.title} »`);
-  const prompt=`Tu es un entraîneur multisport expérimenté (course, vélo, natation, renforcement, basket). Réponds en français, tutoiement, ton direct et concret.
-Date du jour : ${dayKey(t)}.
+  const upcoming=PLANS().filter(p=>p.date>=dayKey(td)).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,10).map(p=>`${p.date} ${SPORTS[p.sport].l} ${p.dur}min ${INT()[p.int]} « ${p.title} »`);
+  const prompt=`Tu es un entraîneur multisport expérimenté (course, vélo, natation, renforcement, basket). ${t("Réponds en français, tutoiement, ton direct et concret.","Answer in English, addressing the athlete directly, in a direct and concrete tone.")}
+Date du jour : ${dayKey(td)}.
 Athlète : FC max ${S.set.hrMax}, FC repos ${S.set.hrRest}, objectif ${S.set.goalH} h/semaine. Objectif principal : ${S.set.goal||"non précisé"}.
 Indicateurs : forme CTL ${m.ctl.toFixed(0)}, fatigue ATL ${m.atl.toFixed(0)}, fraîcheur TSB ${m.tsb.toFixed(0)}, ratio charge aiguë/chronique ${m.acwr?m.acwr.toFixed(2):"n/d"}, historique ${m.histDays} jours.
 Volume des 6 dernières semaines :
@@ -1241,7 +1306,7 @@ Donne 4 à 6 conseils personnalisés pour les 7 prochains jours : ajustements du
     S.aiText=r.text;
   }catch(e){
     if(e?.code==="not_granted"){ S.sample=null; S.aiText=""; }
-    else S.aiText = e?.code==="rate_limited" ? "Trop de demandes pour le moment. Réessaie dans quelques minutes." : "L'analyse n'a pas abouti. Réessaie plus tard.";
+    else S.aiText = e?.code==="rate_limited" ? t("Trop de demandes pour le moment. Réessaie dans quelques minutes.","Too many requests right now. Try again in a few minutes.") : t("L'analyse n'a pas abouti. Réessaie plus tard.","The analysis didn't complete. Try again later.");
   }
   S.aiBusy=false; render();
 }
@@ -1258,34 +1323,44 @@ document.addEventListener("click",async e=>{
   if(el.dataset.editAct){ openAct(S.acts.find(a=>a.id===el.dataset.editAct)); return; }
   if(el.dataset.editPlan){ const p=PLANS().find(x=>x.id===el.dataset.editPlan); if(p) openPlan(p); return; }
   if(el.dataset.addPlan){ openPlan(null,el.dataset.addPlan); return; }
+  if(el.dataset.copy!==undefined){ const v=el.dataset.copy; try{ await navigator.clipboard.writeText(v); toast(t("Copié : ","Copied: ")+v); }catch(err){ const span=el.previousElementSibling; if(span){ const r=document.createRange(); r.selectNodeContents(span); const sel=getSelection(); sel.removeAllRanges(); sel.addRange(r); } toast(t("Sélectionné : copie-le avec ton clavier.","Selected: copy it with your keyboard.")); } return; }
   switch(el.id){
     case "pick": $("#file-in").click(); break;
     case "add-act": openAct(null); break;
     case "ai-btn": runAI(); break;
-    case "strava-sync": if(S.stravaMode==="api" && (!S.stravaTok || el.textContent.includes("Reconnecter"))) stravaAuthorize(); else syncStrava(); break;
+    case "strava-sync": if(S.stravaMode==="api" && (!S.stravaTok || el.dataset.reconnect)) stravaAuthorize(); else syncStrava(); break;
+    case "lang-btn": setLang(LANG==="en"?"fr":"en"); break;
+    case "sa-save": {
+      const id=$("#sa-id").value.trim(), sec=$("#sa-secret").value.trim();
+      if(!/^\d+$/.test(id)||sec.length<20){ toast(t("Vérifie le Client ID (que des chiffres) et le Client Secret (longue suite de caractères).","Check the Client ID (digits only) and the Client Secret (long string of characters).")); break; }
+      el.disabled=true;
+      try{ const app={clientId:id,clientSecret:sec}; await refs.stravaApp.set(app); S.stravaApp=app; resolveStravaMode(); stravaAuthorize(); }
+      catch(e){ el.disabled=false; toast(t("Enregistrement impossible : vérifie les règles Firestore.","Couldn't save: check your Firestore rules.")); }
+      break; }
+    case "strava-app-reset": if(refs&&refs.stravaApp){ await refs.stravaApp.delete(); if(refs.strava) await refs.strava.delete(); S.strava={busy:false,msg:"",err:false}; toast(t("App Strava retirée. Tu peux en saisir une nouvelle dans Activités.","Strava app removed. You can enter a new one in Activities.")); } break;
     case "fb-login": case "fb-login-2": case "fb-login-3": fbLogin(); break;
-    case "fb-logout": if(S.fb&&S.fb.auth){ await S.fb.auth.signOut(); toast("Déconnecté."); } break;
-    case "strava-unlink": if(refs&&refs.strava){ await refs.strava.delete(); S.set.stravaSync=null; saveSettings(); toast("Strava déconnecté."); } break;
+    case "fb-logout": if(S.fb&&S.fb.auth){ await S.fb.auth.signOut(); toast(t("Déconnecté.","Signed out.")); } break;
+    case "strava-unlink": if(refs&&refs.strava){ await refs.strava.delete(); S.set.stravaSync=null; saveSettings(); toast(t("Strava déconnecté.","Strava unlinked.")); } break;
     case "dl-app": case "dl-app-2": downloadApp(); break;
     case "install-app": if(S.installEvt){ S.installEvt.prompt(); S.installEvt=null; $("#install-app").hidden=true; } break;
-    case "a-del": if(el.dataset.confirm){ await delAct(el.dataset.id); closeSheet(); toast("Activité supprimée."); } else { el.dataset.confirm="1"; el.textContent="Confirmer la suppression"; el.classList.add("danger"); } break;
-    case "p-del": if(String(el.dataset.id).startsWith("dp")){ closeSheet(); toast("Séance d'exemple : génère ta propre semaine."); break; } if(el.dataset.confirm){ await delPlan(el.dataset.id); closeSheet(); toast("Séance supprimée."); } else { el.dataset.confirm="1"; el.textContent="Confirmer la suppression"; el.classList.add("danger"); } break;
+    case "a-del": if(el.dataset.confirm){ await delAct(el.dataset.id); closeSheet(); toast(t("Activité supprimée.","Activity deleted.")); } else { el.dataset.confirm="1"; el.textContent=t("Confirmer la suppression","Confirm delete"); el.classList.add("danger"); } break;
+    case "p-del": if(String(el.dataset.id).startsWith("dp")){ closeSheet(); toast(t("Séance d'exemple : génère ta propre semaine.","Sample session: generate your own week.")); break; } if(el.dataset.confirm){ await delPlan(el.dataset.id); closeSheet(); toast(t("Séance supprimée.","Session deleted.")); } else { el.dataset.confirm="1"; el.textContent=t("Confirmer la suppression","Confirm delete"); el.classList.add("danger"); } break;
     case "gen-week": {
       const mon=addDays(startOfWeek(today0()),S.weekOff*7); const keys=[0,1,2,3,4,5,6].map(i=>dayKey(addDays(mon,i)));
       const gen=suggestWeek(mon,ACTS()).filter(p=>p.date>=dayKey(today0()));
-      if(!gen.length){ toast("Cette semaine est passée : avance d'une semaine pour planifier."); break; }
+      if(!gen.length){ toast(t("Cette semaine est passée : avance d'une semaine pour planifier.","This week is over: move ahead a week to plan.")); break; }
       el.disabled=true;
       for(const p of S.plans.filter(p=>p.gen&&keys.includes(p.date)&&p.date>=dayKey(today0()))) await delPlan(p.id);
       for(const p of gen) await putPlan({...p,id:"p"+uid()});
-      toast(`${gen.length} séances proposées. Touche une séance pour l'ajuster.`); break; }
+      toast(t(`${gen.length} séances proposées. Touche une séance pour l'ajuster.`,`${gen.length} sessions suggested. Tap a session to adjust it.`)); break; }
     case "clear-week": {
       const mon=addDays(startOfWeek(today0()),S.weekOff*7); const keys=[0,1,2,3,4,5,6].map(i=>dayKey(addDays(mon,i)));
-      const ps=S.plans.filter(p=>keys.includes(p.date)); if(!ps.length){ toast("Aucune séance planifiée cette semaine."); break; }
-      if(!el.dataset.confirm){ el.dataset.confirm="1"; el.textContent=`Supprimer ${ps.length} séance(s) ?`; el.classList.add("danger"); break; }
-      for(const p of ps) await delPlan(p.id); toast("Semaine vidée."); break; }
-    case "wipe": $("#wipe-zone").innerHTML=`<span class="muted">Supprimer ${S.acts.length} activités et ${S.plans.length} séances ? C'est définitif.</span><button class="btn small ghost" id="wipe-no">Annuler</button><button class="btn small danger" id="wipe-yes">Tout effacer</button>`; break;
+      const ps=S.plans.filter(p=>keys.includes(p.date)); if(!ps.length){ toast(t("Aucune séance planifiée cette semaine.","No sessions planned this week.")); break; }
+      if(!el.dataset.confirm){ el.dataset.confirm="1"; el.textContent=t(`Supprimer ${ps.length} séance(s) ?`,`Delete ${ps.length} session(s)?`); el.classList.add("danger"); break; }
+      for(const p of ps) await delPlan(p.id); toast(t("Semaine vidée.","Week cleared.")); break; }
+    case "wipe": $("#wipe-zone").innerHTML=`<span class="muted">${t(`Supprimer ${S.acts.length} activités et ${S.plans.length} séances ? C'est définitif.`,`Delete ${S.acts.length} activities and ${S.plans.length} sessions? This can't be undone.`)}</span><button class="btn small ghost" id="wipe-no">${t("Annuler","Cancel")}</button><button class="btn small danger" id="wipe-yes">${t("Tout effacer","Delete everything")}</button>`; break;
     case "wipe-no": render(); break;
-    case "wipe-yes": { const st=$("#wipe-zone"); st.innerHTML=`<span class="muted">Suppression…</span>`; for(const a of [...S.acts]) await delAct(a.id); for(const p of [...S.plans]) await delPlan(p.id); toast("Données effacées."); render(); break; }
+    case "wipe-yes": { const st=$("#wipe-zone"); st.innerHTML=`<span class="muted">${t("Suppression…","Deleting…")}</span>`; for(const a of [...S.acts]) await delAct(a.id); for(const p of [...S.plans]) await delPlan(p.id); toast(t("Données effacées.","Data deleted.")); render(); break; }
   }
 });
 document.addEventListener("change",e=>{
@@ -1293,8 +1368,9 @@ document.addEventListener("change",e=>{
   if(id==="file-in"){ importFiles([...e.target.files]); e.target.value=""; return; }
   if(id==="evo-sport"){ S.evoSport=v; render(); return; }
   if(id==="evo-metric"){ S.evoMetric=v; render(); return; }
+  if(id==="s-lang"){ setLang(v); return; }
   const map={"s-hrmax":"hrMax","s-hrrest":"hrRest","s-goalh":"goalH","s-rest":"restDay","s-goal":"goal"};
-  if(map[id]){ S.set[map[id]] = id==="s-goal" ? v.trim() : (parseFloat(v)||0); saveSettings(); toast("Réglages enregistrés."); }
+  if(map[id]){ S.set[map[id]] = id==="s-goal" ? v.trim() : (parseFloat(v)||0); saveSettings(); toast(t("Réglages enregistrés.","Settings saved.")); }
 });
 document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeSheet(); });
 function bindDrop(){
@@ -1305,5 +1381,6 @@ function bindDrop(){
 }
 try{ matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>render()); }catch(e){}
 new MutationObserver(()=>render()).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
+applyStatic();
 initStore();
 </script></body></html>
