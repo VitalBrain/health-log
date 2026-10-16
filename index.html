@@ -153,6 +153,13 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
 .kv:last-child{border-bottom:0}
 .kv .k{color:var(--muted)} .kv .v{overflow-wrap:anywhere}
 @media (max-width:520px){.kv{grid-template-columns:1fr auto}.kv .k{grid-column:1/-1}}
+.kofi{border-color:color-mix(in srgb,#FF5E5B 55%,var(--line))}
+@media (max-width:480px){#kofi-label{display:none}.kofi{padding-inline:10px}}
+.kofi:hover{background:color-mix(in srgb,#FF5E5B 12%,transparent)}
+.foot{margin-top:28px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);display:flex;gap:6px;flex-wrap:wrap}
+.foot a{color:var(--ink)}
+.kofi-card{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:center}
+.kofi-card .cup{width:44px;height:44px;border-radius:12px;background:#FF5E5B;color:#fff;display:grid;place-items:center;font-size:22px}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--btn);color:var(--btn-ink);padding:10px 16px;border-radius:10px;font-size:14px;z-index:60;max-width:calc(100% - 32px)}
 .empty{padding:18px;text-align:center;color:var(--muted);font-size:14px}
@@ -168,6 +175,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
     </div>
     <div class="row">
       <div class="sync" id="sync"><span class="dot wait"></span><span>Connexion…</span></div>
+      <a class="btn small ghost kofi" id="kofi-btn" href="https://ko-fi.com/forma_training" target="_blank" rel="noopener"><span aria-hidden="true">☕</span> <span id="kofi-label">Soutenir</span></a>
       <button class="btn small ghost" id="lang-btn" aria-label="Langue / Language">EN</button>
       <button class="btn small" id="fb-login" hidden="">Se connecter</button>
       <button class="btn small" id="install-app" hidden="">Installer l'app</button>
@@ -183,6 +191,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
   </div></nav>
   <div id="demo-banner"></div>
   <main id="view"><div class="loading">Chargement de tes séances…</div></main>
+  <footer class="foot"><span id="foot-txt">Forma est gratuit et sans publicité.</span> <a href="https://ko-fi.com/forma_training" target="_blank" rel="noopener" id="foot-link">Offre-moi un café sur Ko-fi ↗</a></footer>
 </div>
 <div id="sheet-root"></div>
 <input type="file" id="file-in" accept=".csv,.tcx,.gpx,text/csv,application/gpx+xml" multiple="" hidden="">
@@ -263,7 +272,8 @@ function applyStatic(){
   const tabs={dash:t("Tableau de bord","Dashboard"),plan:t("Planning","Plan"),acts:t("Activités","Activities"),evo:t("Évolution","Progress"),set:t("Réglages","Settings")};
   document.querySelectorAll("nav.tabs button").forEach(b=>b.textContent=tabs[b.dataset.tab]);
   const set=(id,txt)=>{ const el=document.getElementById(id); if(el&&!el.disabled) el.textContent=txt; };
-  set("fb-login",t("Se connecter","Sign in")); set("install-app",t("Installer l'app","Install app")); set("dl-app",t("Télécharger l'app","Download app"));
+  set("fb-login",t("Se connecter","Sign in")); set("kofi-label",t("Soutenir","Support"));
+  set("foot-txt",t("Forma est gratuit et sans publicité.","Forma is free and ad-free.")); set("foot-link",t("Offre-moi un café sur Ko-fi ↗","Buy me a coffee on Ko-fi ↗")); set("install-app",t("Installer l'app","Install app")); set("dl-app",t("Télécharger l'app","Download app"));
   const lb=$("#lang-btn"); if(lb){ lb.textContent=LANG==="en"?"FR":"EN"; lb.title=LANG==="en"?"Passer en français":"Switch to English"; }
   document.documentElement.lang=LANG;
   setSync(...syncMsg);
@@ -1258,6 +1268,11 @@ function viewSet(){
     ${window.__STANDALONE ? accountBlock() : `<p class="muted" style="margin:0">${t("« Télécharger l'app » crée un dossier prêt pour Netlify, comme tes autres apps : connexion Google via ton projet Firebase, synchro Strava automatique, installable sur Android. Le fichier LISEZMOI.txt détaille la mise en ligne. Tes séances actuelles sont incluses.","“Download app” creates a Netlify-ready folder: Google sign-in through your Firebase project, automatic Strava sync, installable on Android. LISEZMOI.txt explains how to put it online. Your current sessions are included.")}</p>`}
     ${S.dl?`<div class="row"><button class="btn small" id="dl-app-2">${t("Télécharger l'app","Download app")}</button></div>`:""}
   </section>
+  <section class="card kofi-card"><span class="cup" aria-hidden="true">☕</span><div class="stack" style="gap:6px;min-width:0">
+    <h2>${t("Soutenir Forma","Support Forma")}</h2>
+    <p class="muted" style="margin:0">${t("Forma est gratuit, sans publicité et sans revente de données. Si l'app t'aide à mieux t'entraîner, tu peux soutenir son développement sur Ko-fi.","Forma is free, ad-free and never sells your data. If it helps you train better, you can support its development on Ko-fi.")}</p>
+    <div class="row"><a class="btn small" href="https://ko-fi.com/forma_training" target="_blank" rel="noopener">☕ ${t("Soutenir sur Ko-fi","Support on Ko-fi")} ↗</a></div>
+  </div></section>
   <section class="card stack"><h2>${t("Données","Data")}</h2>
     <p class="muted" style="margin:0">${S.mode==="db"?t(`${S.acts.length} activités et ${S.plans.length} séances planifiées enregistrées sur ton compte, visibles par toi seul, sur tous tes appareils.`,`${S.acts.length} activities and ${S.plans.length} planned sessions saved to your account, visible only to you, on all your devices.`):(window.__STANDALONE?t(`${S.acts.length} activités enregistrées sur cet appareil uniquement. Connecte-toi pour les synchroniser.`,`${S.acts.length} activities saved on this device only. Sign in to sync them.`):t(`${S.acts.length} activités enregistrées dans ce navigateur uniquement.`,`${S.acts.length} activities saved in this browser only.`))}</p>
     <div class="row" id="wipe-zone"><button class="btn small ghost" id="wipe">${t("Effacer toutes mes données","Delete all my data")}</button></div>
