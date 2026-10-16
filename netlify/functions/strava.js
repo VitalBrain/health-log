@@ -16,7 +16,7 @@ exports.handler = async (event) => {
     const r = await fetch("https://www.strava.com/oauth/token", { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ client_id: id, client_secret: secret, ...grant }) });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) return json(r.status, { error: d.message || "strava_error" });
+    if (!r.ok) return json(r.status, { error: d.message || "strava_error", fields: (d.errors || []).map(e => (e.field || e.resource || "") + ":" + (e.code || "")).join(", ") });
     return json(200, { access_token: d.access_token, refresh_token: d.refresh_token, expires_at: d.expires_at,
       athlete: d.athlete ? { id: d.athlete.id, firstname: d.athlete.firstname || "" } : null });
   }
