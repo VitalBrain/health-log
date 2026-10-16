@@ -158,6 +158,11 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
 .kofi:hover{background:color-mix(in srgb,#FF5E5B 12%,transparent)}
 .foot{margin-top:28px;padding-top:14px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);display:flex;gap:6px;flex-wrap:wrap}
 .foot a{color:var(--ink)}
+.kofi-pop{align-items:center;text-align:center}
+.kofi-pop .btn{width:100%;justify-content:center;text-align:center;text-decoration:none}
+.cup.big{width:60px;height:60px;border-radius:16px;background:#FF5E5B;color:#fff;display:grid;place-items:center;font-size:30px}
+.check{display:flex;gap:8px;align-items:center;font-size:14px;cursor:pointer}
+.check input{width:18px;height:18px;accent-color:var(--s-course)}
 .kofi-card{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:center}
 .kofi-card .cup{width:44px;height:44px;border-radius:12px;background:#FF5E5B;color:#fff;display:grid;place-items:center;font-size:22px}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
@@ -1097,6 +1102,36 @@ if(window.__STANDALONE){
 }
 document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible" && S.set.stravaSync && Date.now()-Date.parse(S.set.stravaSync)>15*60e3 && S.autoSynced){ S.autoSynced=false; maybeAutoSync(); } });
 
+/* ============ pop-up de soutien Ko-fi ============ */
+const KOFI="https://ko-fi.com/forma_training", KK="forma-kofi";
+function kofiState(){ try{ return JSON.parse(localStorage.getItem(KK)||"{}"); }catch(e){ return {}; } }
+function kofiSave(o){ try{ localStorage.setItem(KK,JSON.stringify({...kofiState(),...o})); }catch(e){} }
+function kofiOff(){ return !!(S.set.kofiOff || kofiState().off); }
+function setKofiOff(off){ kofiSave({off}); S.set.kofiOff=off; saveSettings(); }
+function openKofi(manual=false){
+  sheet(`<div class="kofi-pop stack">
+    <span class="cup big" aria-hidden="true">☕</span>
+    <h2>${t("Forma te plaît ?","Enjoying Forma?")}</h2>
+    <p class="muted" style="margin:0">${t("Forma est gratuit, sans publicité et ne revend pas tes données. Je le développe sur mon temps libre. Si l'app t'aide à mieux t'entraîner, un café sur Ko-fi m'aide à la faire vivre.","Forma is free, ad-free and never sells your data. I build it in my spare time. If it helps you train better, a coffee on Ko-fi helps keep it going.")}</p>
+    <a class="btn" id="kofi-go" href="${KOFI}" target="_blank" rel="noopener">☕ ${t("Soutenir sur Ko-fi","Support on Ko-fi")} ↗</a>
+    <button class="btn ghost" data-close>${t("Plus tard","Maybe later")}</button>
+    <label class="check"><input type="checkbox" id="kofi-never" ${kofiOff()?"checked":""}> ${t("Ne plus afficher ce message","Don't show this again")}</label>
+    <span class="hint">${t("Tu peux le réactiver dans Réglages.","You can turn it back on in Settings.")}</span>
+  </div>`);
+  if(!manual) kofiSave({last:Date.now()});
+}
+function maybeKofi(){
+  // après quelques ouvertures, au plus une fois par semaine, jamais par-dessus une autre fenêtre
+  const st=kofiState(); const opens=(st.opens||0)+1; kofiSave({opens});
+  setTimeout(()=>{
+    if(kofiOff()||opens<3) return;
+    if(st.last && Date.now()-st.last<7*864e5) return;
+    if($("#sheet-root").innerHTML) return;
+    if(isDemo()) return;
+    openKofi(false);
+  },25000);
+}
+
 /* ============ rendu ============ */
 function render(){
   if(!S.actsReady && !S.timedOut) return;
@@ -1272,6 +1307,7 @@ function viewSet(){
     <h2>${t("Soutenir Forma","Support Forma")}</h2>
     <p class="muted" style="margin:0">${t("Forma est gratuit, sans publicité et sans revente de données. Si l'app t'aide à mieux t'entraîner, tu peux soutenir son développement sur Ko-fi.","Forma is free, ad-free and never sells your data. If it helps you train better, you can support its development on Ko-fi.")}</p>
     <div class="row"><a class="btn small" href="https://ko-fi.com/forma_training" target="_blank" rel="noopener">☕ ${t("Soutenir sur Ko-fi","Support on Ko-fi")} ↗</a></div>
+    <label class="check"><input type="checkbox" id="kofi-reminder" ${kofiOff()?"":"checked"}> ${t("Afficher de temps en temps le rappel de soutien","Show the support reminder now and then")}</label>
   </div></section>
   <section class="card stack"><h2>${t("Données","Data")}</h2>
     <p class="muted" style="margin:0">${S.mode==="db"?t(`${S.acts.length} activités et ${S.plans.length} séances planifiées enregistrées sur ton compte, visibles par toi seul, sur tous tes appareils.`,`${S.acts.length} activities and ${S.plans.length} planned sessions saved to your account, visible only to you, on all your devices.`):(window.__STANDALONE?t(`${S.acts.length} activités enregistrées sur cet appareil uniquement. Connecte-toi pour les synchroniser.`,`${S.acts.length} activities saved on this device only. Sign in to sync them.`):t(`${S.acts.length} activités enregistrées dans ce navigateur uniquement.`,`${S.acts.length} activities saved in this browser only.`))}</p>
@@ -1417,7 +1453,7 @@ Donne 4 à 6 conseils personnalisés pour les 7 prochains jours : ajustements du
 
 /* ============ événements ============ */
 document.addEventListener("click",async e=>{
-  const el=e.target.closest("button,[data-close],#sheet-bg"); if(!el) return;
+  const el=e.target.closest("button,[data-close],#sheet-bg,#kofi-go"); if(!el) return;
   if(el.id==="sheet-bg"&&e.target===el) return closeSheet();
   if(el.dataset.close!==undefined) return closeSheet();
   if(el.dataset.tab){ S.tab=el.dataset.tab; render(); window.scrollTo({top:0}); return; }
@@ -1427,6 +1463,7 @@ document.addEventListener("click",async e=>{
   if(el.dataset.editAct){ openAct(S.acts.find(a=>a.id===el.dataset.editAct)); return; }
   if(el.dataset.editPlan){ const p=PLANS().find(x=>x.id===el.dataset.editPlan); if(p) openPlan(p); return; }
   if(el.dataset.addPlan){ openPlan(null,el.dataset.addPlan); return; }
+  if(el.id==="kofi-go"){ kofiSave({clicked:Date.now()}); setTimeout(closeSheet,300); return; }
   if(el.dataset.copy!==undefined){ const v=el.dataset.copy; try{ await navigator.clipboard.writeText(v); toast(t("Copié : ","Copied: ")+(el.dataset.label||(v.length>48?v.slice(0,45)+"…":v))); }catch(err){ const span=el.previousElementSibling; if(span){ const r=document.createRange(); r.selectNodeContents(span); const sel=getSelection(); sel.removeAllRanges(); sel.addRange(r); } toast(t("Sélectionné : copie-le avec ton clavier.","Selected: copy it with your keyboard.")); } return; }
   switch(el.id){
     case "pick": $("#file-in").click(); break;
@@ -1479,6 +1516,8 @@ document.addEventListener("change",e=>{
   if(id==="evo-sport"){ S.evoSport=v; render(); return; }
   if(id==="evo-metric"){ S.evoMetric=v; render(); return; }
   if(id==="s-lang"){ setLang(v); return; }
+  if(id==="kofi-never"){ setKofiOff(e.target.checked); toast(e.target.checked?t("Message désactivé.","Message turned off."):t("Message réactivé.","Message turned back on.")); return; }
+  if(id==="kofi-reminder"){ setKofiOff(!e.target.checked); toast(e.target.checked?t("Rappel activé.","Reminder on."):t("Rappel désactivé.","Reminder off.")); return; }
   const map={"s-hrmax":"hrMax","s-hrrest":"hrRest","s-goalh":"goalH","s-rest":"restDay","s-goal":"goal"};
   if(map[id]){ S.set[map[id]] = id==="s-goal" ? v.trim() : (parseFloat(v)||0); saveSettings(); toast(t("Réglages enregistrés.","Settings saved.")); }
 });
@@ -1493,4 +1532,5 @@ try{ matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>re
 new MutationObserver(()=>render()).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
 applyStatic();
 initStore();
+maybeKofi();
 </script></body></html>
