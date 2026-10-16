@@ -2,6 +2,10 @@
   publish = "."
   functions = "netlify/functions"
 
+# La clé Firebase web est publique par nature : on l'exclut du scanner de secrets.
+[build.environment]
+  SECRETS_SCAN_SMART_DETECTION_OMIT_VALUES = "AIzaSyDF6hKnOqaFM2CE06k-83Rgrahm8MKx0Zk"
+
 [[headers]]
   for = "/sw.js"
   [headers.values]

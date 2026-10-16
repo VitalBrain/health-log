@@ -1060,7 +1060,7 @@ async function buildPackage(withData=true){
   const z=new JSZip();
   z.file("index.html",standaloneHTML(withData)); z.file("manifest.webmanifest",JSON.stringify(manifest,null,2)); z.file("sw.js",SW_JS);
   z.file("firebase-config.js",FB_CFG); z.file("netlify/functions/strava.js",FN_JS);
-  z.file("netlify.toml",`[build]\n  publish = "."\n  functions = "netlify/functions"\n\n[[headers]]\n  for = "/sw.js"\n  [headers.values]\n    Cache-Control = "no-cache"\n`);
+  z.file("netlify.toml",`[build]\n  publish = "."\n  functions = "netlify/functions"\n\n# La clé Firebase web est publique par nature : on l'exclut du scanner de secrets.\n[build.environment]\n  SECRETS_SCAN_SMART_DETECTION_OMIT_VALUES = "AIzaSyDF6hKnOqaFM2CE06k-83Rgrahm8MKx0Zk"\n\n[[headers]]\n  for = "/sw.js"\n  [headers.values]\n    Cache-Control = "no-cache"\n`);
   z.file("icon-192.png",await makeIcon(192)); z.file("icon-512.png",await makeIcon(512)); z.file("LISEZMOI.txt",README);
   return z;
 }
