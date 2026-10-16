@@ -1,7 +1,8 @@
 {
-  "name": "Carnet de Forme",
-  "short_name": "Forme",
-  "lang": "fr",
+  "name": "Forma",
+  "short_name": "Forma",
+  "description": "Plan and track your training",
+  "lang": "en",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

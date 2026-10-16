@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#14263A"><title>Carnet de Forme</title><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script><script src="firebase-config.js"></script><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font-size:14px}img{max-width:100%}[hidden]{display:none!important}</style><style id="app-style">
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#14263A"><title>Forma</title><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script><script src="firebase-config.js"></script><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font-size:14px}img{max-width:100%}[hidden]{display:none!important}</style><style id="app-style">
 /* Layout: carnet d'athlète — bandeau de forme en haut, onglets collants, cartes par rôle, chiffres en condensé façon tableau d'affichage de stade */
 :root{
   --paper:#EEF1F4; --card:#FFFFFF; --ink:#111A23; --muted:#5A6672; --line:#D7DDE3; --soft:#F5F7F9;
@@ -153,6 +153,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
 .kv:last-child{border-bottom:0}
 .kv .k{color:var(--muted)} .kv .v{overflow-wrap:anywhere}
 @media (max-width:520px){.kv{grid-template-columns:1fr auto}.kv .k{grid-column:1/-1}}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--btn);color:var(--btn-ink);padding:10px 16px;border-radius:10px;font-size:14px;z-index:60;max-width:calc(100% - 32px)}
 .empty{padding:18px;text-align:center;color:var(--muted);font-size:14px}
 .loading{padding:40px 0;text-align:center;color:var(--muted)}
@@ -162,7 +163,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
   <header class="top">
     <div class="brand">
       <div class="lanes" aria-hidden="true"><i style="background:var(--s-course)"></i><i style="background:var(--s-velo)"></i><i style="background:var(--s-natation)"></i><i style="background:var(--s-renfo)"></i><i style="background:var(--s-basket)"></i></div>
-      <h1>Carnet de Forme</h1>
+      <h1>Forma</h1>
       <div class="muted" id="today-line" style="font-size:14px"></div>
     </div>
     <div class="row">
@@ -306,18 +307,91 @@ function resolveStravaMode(){
   if(!S.stravaFnOk) return;
   if(S.stravaNeedsApp) S.stravaClientId = S.stravaApp?.clientId || null;
   S.stravaMode = S.stravaClientId ? "api" : null;
+  maybeShowStravaSetup();
+}
+let stravaSetupShown=false, stravaAppLoaded=false;
+function maybeShowStravaSetup(){
+  // ouvre l'onglet de configuration Strava une fois par lancement tant qu'elle n'est pas faite
+  if(stravaSetupShown||!window.__STANDALONE||!S.fb||S.fb.state!=="in"||!stravaAppLoaded) return;
+  if(S.stravaFnOk && !S.stravaMode){ stravaSetupShown=true; S.tab="acts"; render(); setTimeout(()=>{ const el=document.querySelector(".setup"); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); },150); }
+  else if(S.stravaMode && S.stravaTok===null && S.stravaTokLoaded){ stravaSetupShown=true; S.tab="acts"; render(); }
 }
 function detachFb(){ unsubs.forEach(f=>{ try{f();}catch(e){} }); unsubs=[]; }
+const FBK="carnet-forme-fbcfg";
+const RULES=`match /users/{uid}/{document=**} {
+  allow read, write: if request.auth != null && request.auth.uid == uid;
+}`;
+function parseFbConfig(txt){
+  txt=String(txt||""); const o={};
+  for(const k of ["apiKey","authDomain","projectId","appId","storageBucket","messagingSenderId"]){
+    const m=txt.match(new RegExp('["\']?'+k+'["\']?\\s*:\\s*["\']([^"\']+)["\']')); if(m) o[k]=m[1].trim();
+  }
+  return (o.apiKey&&o.projectId&&o.appId) ? (o.authDomain||(o.authDomain=o.projectId+".firebaseapp.com"), o) : null;
+}
+function getFbConfig(){
+  const w=window.FIREBASE_CONFIG; if(w&&w.apiKey){ S.fbSource="file"; return w; }
+  try{
+    const u=new URL(location.href); const q=u.searchParams.get("fbcfg");
+    if(q){ const c=JSON.parse(decodeURIComponent(escape(atob(q)))); if(c&&c.apiKey) localStorage.setItem(FBK,JSON.stringify(c)); u.searchParams.delete("fbcfg"); history.replaceState(null,"",u.pathname+(u.search||"")); }
+  }catch(e){}
+  try{ const c=JSON.parse(localStorage.getItem(FBK)||"null"); if(c&&c.apiKey){ S.fbSource="local"; S.fbCfg=c; return c; } }catch(e){}
+  return null;
+}
+function fbShareLink(){ try{ return location.origin+location.pathname+"?fbcfg="+btoa(unescape(encodeURIComponent(JSON.stringify(S.fbCfg)))); }catch(e){ return ""; } }
+function openFbSetup(){
+  const host=location.hostname, cur=S.fbCfg?JSON.stringify(S.fbCfg,null,2):"";
+  sheet(`<h2>${t("Configurer la synchronisation","Set up sync")}</h2>
+  <p class="hint" style="margin:0">${t("À faire une seule fois. L'app enregistre ensuite la configuration sur cet appareil.","One time only. The app then saves the configuration on this device.")}</p>
+  <div class="setup stack">
+    <div class="step"><span class="n">1</span><div class="stack" style="gap:6px;min-width:0">
+      <b>${t("Copie la configuration de ton projet Firebase","Copy your Firebase project configuration")}</b>
+      <span class="hint">${t("Console Firebase → ton projet (celui de la Matrice d'Eisenhower) → ⚙ Paramètres du projet → Vos applications → application Web → « Configuration du SDK » → « Config ». Copie tout le bloc firebaseConfig.","Firebase console → your project → ⚙ Project settings → Your apps → Web app → “SDK setup and configuration” → “Config”. Copy the whole firebaseConfig block.")}</span>
+      <div class="row"><a class="btn small" href="https://console.firebase.google.com/" target="_blank" rel="noopener">${t("Ouvrir la console Firebase","Open the Firebase console")} ↗</a></div>
+    </div></div>
+    <div class="step"><span class="n">2</span><div class="stack" style="gap:6px;min-width:0">
+      <b>${t("Colle-la ici","Paste it here")}</b>
+      <div class="f"><label for="fb-paste" class="sr">${t("Configuration Firebase","Firebase configuration")}</label><textarea id="fb-paste" class="mono" style="min-height:120px;font-size:12.5px" placeholder='const firebaseConfig = {
+  apiKey: "AIza…",
+  authDomain: "…",
+  projectId: "…",
+  appId: "…"
+};'>${esc(cur)}</textarea></div>
+      <span class="hint" id="fb-parse-status"></span>
+    </div></div>
+    <div class="step"><span class="n">3</span><div class="stack" style="gap:6px;min-width:0">
+      <b>${t("Autorise ce site pour la connexion Google","Allow this site for Google sign-in")}</b>
+      <span class="hint">${t("Authentication → Settings → Domaines autorisés → Ajouter un domaine :","Authentication → Settings → Authorized domains → Add domain:")}</span>
+      <div class="kvs"><div class="kv"><span class="k">${t("Domaine","Domain")}</span><span class="v mono">${esc(host)}</span><button class="icon-btn" data-copy="${esc(host)}">${t("Copier","Copy")}</button></div></div>
+      <div class="row"><a class="btn small ghost" id="fb-link-auth" href="https://console.firebase.google.com/" target="_blank" rel="noopener">${t("Ouvrir Authentication","Open Authentication")} ↗</a></div>
+    </div></div>
+    <div class="step"><span class="n">4</span><div class="stack" style="gap:6px;min-width:0">
+      <b>${t("Ajoute la règle Firestore","Add the Firestore rule")}</b>
+      <span class="hint">${t("Firestore Database → Règles → colle ce bloc à l'intérieur de « match /databases/{database}/documents { … } », puis Publier.","Firestore Database → Rules → paste this block inside “match /databases/{database}/documents { … }”, then Publish.")}</span>
+      <div class="kvs"><div class="kv" style="grid-template-columns:minmax(0,1fr) auto"><pre class="v mono" style="margin:0;white-space:pre-wrap;font-size:12px">${esc(RULES)}</pre><button class="icon-btn" data-copy="${esc(RULES)}">${t("Copier","Copy")}</button></div></div>
+      <div class="row"><a class="btn small ghost" id="fb-link-rules" href="https://console.firebase.google.com/" target="_blank" rel="noopener">${t("Ouvrir les règles Firestore","Open Firestore rules")} ↗</a></div>
+    </div></div>
+  </div>
+  <div class="row between"><span></span><div class="row"><button type="button" class="btn ghost" data-close>${t("Annuler","Cancel")}</button><button class="btn" id="fb-save">${t("Enregistrer et redémarrer","Save and restart")}</button></div></div>`);
+  const ta=$("#fb-paste"), st=$("#fb-parse-status");
+  const upd=()=>{ const c=parseFbConfig(ta.value);
+    if(!ta.value.trim()){ st.textContent=""; return; }
+    if(c){ st.textContent="✓ "+t("Projet détecté : ","Project detected: ")+c.projectId; st.style.color="var(--good)";
+      $("#fb-link-auth").href=`https://console.firebase.google.com/project/${encodeURIComponent(c.projectId)}/authentication/settings`;
+      $("#fb-link-rules").href=`https://console.firebase.google.com/project/${encodeURIComponent(c.projectId)}/firestore/rules`; }
+    else { st.textContent=t("Il manque apiKey, projectId ou appId : copie tout le bloc.","apiKey, projectId or appId is missing: copy the whole block."); st.style.color="var(--bad)"; } };
+  ta.addEventListener("input",upd); upd();
+}
 async function initStandalone(){
   loadLocal();
-  const cfg=window.FIREBASE_CONFIG;
+  const cfg=getFbConfig();
   fetch("/.netlify/functions/strava?action=config").then(async r=>{
     const j=await r.json().catch(()=>null);
     if(r.ok&&j){ S.stravaFnOk=true; if(j.clientId&&!j.setup){ S.stravaClientId=j.clientId; } else S.stravaNeedsApp=true; resolveStravaMode(); }
     else S.stravaFnMissing = (j&&j.error==="missing_env") ? "env" : "fn";
     render(); maybeAutoSync();
   }).catch(()=>{ S.stravaFnMissing="fn"; render(); });
-  if(!window.firebase||!cfg||!cfg.apiKey){ S.fb={state:"noconfig"}; setSync("wait","Enregistré sur cet appareil","Saved on this device"); render(); return; }
+  if(!window.firebase||!cfg||!cfg.apiKey){ S.fb={state:"noconfig"}; if(!window.firebase) S.fbNoSdk=true;
+    else { S.tab="acts"; setTimeout(()=>{ if(!$("#sheet-root").innerHTML) openFbSetup(); },350); } setSync("wait","Enregistré sur cet appareil","Saved on this device"); render(); return; }
   try{
     firebase.initializeApp(cfg);
     const fdb=firebase.firestore(); try{ fdb.settings({ignoreUndefinedProperties:true}); }catch(e){}
@@ -326,7 +400,7 @@ async function initStandalone(){
   try{ await S.fb.auth.getRedirectResult(); }catch(e){ if(e.code==="auth/unauthorized-domain") toast(t("Ajoute ce domaine dans Firebase → Authentication → Domaines autorisés.","Add this domain in Firebase → Authentication → Authorized domains.")); }
   S.fb.auth.onAuthStateChanged(u=>{
     if(u) attachFirestore(u);
-    else { detachFb(); S.fb.state="out"; S.fb.user=null; S.stravaTok=null; S.stravaApp=null; resolveStravaMode(); loadLocal(); setSync("wait","Non connecté · données sur cet appareil","Signed out · data on this device"); render(); }
+    else { if(!S._outShown){ S._outShown=true; S.tab="acts"; } detachFb(); S.fb.state="out"; S.fb.user=null; S.stravaTok=null; S.stravaApp=null; resolveStravaMode(); loadLocal(); setSync("wait","Non connecté · données sur cet appareil","Signed out · data on this device"); render(); }
   });
 }
 function attachFirestore(u){
@@ -345,8 +419,8 @@ function attachFirestore(u){
     render();
   }, fail));
   unsubs.push(refs.plans.onSnapshot(q=>{ S.plans=q.docs.map(d=>({id:d.id,...d.data()})); render(); }, ()=>{}));
-  unsubs.push(refs.strava.onSnapshot(sn=>{ S.stravaTok=sn.exists?sn.data():null; render(); maybeAutoSync(); }, ()=>{}));
-  unsubs.push(refs.stravaApp.onSnapshot(sn=>{ S.stravaApp=sn.exists?sn.data():null; resolveStravaMode(); render(); maybeAutoSync(); }, ()=>{}));
+  unsubs.push(refs.strava.onSnapshot(sn=>{ S.stravaTok=sn.exists?sn.data():null; S.stravaTokLoaded=true; maybeShowStravaSetup(); render(); maybeAutoSync(); }, ()=>{}));
+  unsubs.push(refs.stravaApp.onSnapshot(sn=>{ S.stravaApp=sn.exists?sn.data():null; stravaAppLoaded=true; resolveStravaMode(); render(); maybeAutoSync(); }, ()=>{}));
   handleStravaReturn();
 }
 async function migrateLocal(empty,acts,plans){
@@ -817,9 +891,9 @@ function connCard(){
     </div></div></section>`;
   const last=agoStr(S.set.stravaSync);
   if(window.__STANDALONE){
-    if(S.stravaFnMissing==="env") return shell("", t("Ce site utilise une ancienne version de la fonction Strava. Redéploie le dernier dossier carnet-de-forme-netlify.zip : la configuration Strava se fera ensuite ici, sans variables Netlify.","This site runs an old version of the Strava function. Redeploy the latest carnet-de-forme-netlify.zip: Strava setup will then happen right here, with no Netlify variables."), true);
+    if(S.stravaFnMissing==="env") return shell("", t("Ce site utilise une ancienne version de la fonction Strava. Redéploie le dernier dossier forma-netlify.zip : la configuration Strava se fera ensuite ici, sans variables Netlify.","This site runs an old version of the Strava function. Redeploy the latest forma-netlify.zip: Strava setup will then happen right here, with no Netlify variables."), true);
     if(S.stravaFnMissing) return shell("", t("La fonction Strava n'est pas déployée sur ce site : le glisser-déposer ne la publie pas. Déploie via GitHub ou la ligne de commande (étape 4 du LISEZMOI).","The Strava function isn't deployed on this site: drag-and-drop doesn't publish it. Deploy through GitHub or the command line (step 4 of LISEZMOI)."), true);
-    if(!S.fb||S.fb.state==="noconfig") return shell("", t("Renseigne ta configuration Firebase (fichier firebase-config.js) pour activer la synchro.","Fill in your Firebase configuration (firebase-config.js) to turn on sync."), true);
+    if(!S.fb||S.fb.state==="noconfig") return shell(`<button class="btn small" id="fb-setup">${t("Configurer","Set up")}</button>`, t("Synchronisation pas encore configurée : touche « Configurer » et colle la configuration de ton projet Firebase.","Sync isn't set up yet: tap “Set up” and paste your Firebase project configuration."), true);
     if(S.fb.state!=="in") return shell(`<button class="btn small" id="fb-login-2">${t("Se connecter avec Google","Sign in with Google")}</button>`, t("Connecte-toi pour synchroniser tes séances entre tes appareils et relier Strava.","Sign in to sync your sessions across devices and link Strava."), false);
     if(!S.stravaFnOk) return shell("", t("Vérification de la connexion Strava…","Checking the Strava connection…"), false);
     if(!S.stravaMode) return shell("", "", false, stravaSetup());
@@ -840,7 +914,7 @@ function stravaSetup(){
     <div class="step"><span class="n">1</span><div class="stack" style="gap:8px;min-width:0">
       <b>${t("Crée ton app Strava (une seule fois, 2 min)","Create your Strava app (one time, 2 min)")}</b>
       <span class="hint">${t("Strava demande à chaque utilisateur d'enregistrer sa propre app. Ouvre la page, puis remplis le formulaire avec ces valeurs :","Strava asks each user to register their own app. Open the page, then fill in the form with these values:")}</span>
-      <div class="kvs">${row(t("Nom de l'application","Application Name"),"Carnet de Forme")}${row(t("Catégorie","Category"),"Training",false)}${row(t("Site web","Website"),site)}${row("Authorization Callback Domain",host)}</div>
+      <div class="kvs">${row(t("Nom de l'application","Application Name"),"Forma")}${row(t("Catégorie","Category"),"Training",false)}${row(t("Site web","Website"),site)}${row("Authorization Callback Domain",host)}</div>
       <div class="row"><a class="btn small" href="https://www.strava.com/settings/api" target="_blank" rel="noopener">${t("Ouvrir Strava API","Open Strava API")} ↗</a></div>
     </div></div>
     <div class="step"><span class="n">2</span><div class="stack" style="gap:8px;min-width:0">
@@ -869,7 +943,7 @@ function standaloneHTML(withData=true){
   const script=document.getElementById("app-script").textContent;
   const seed=withData&&S.acts.length ? JSON.stringify({acts:S.acts,plans:S.plans,set:S.set}).replace(/</g,"\\u003c") : "null";
   const fb="https://www.gstatic.com/firebasejs/10.12.2/";
-  return `<!doctype html><html lang="${LANG}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#14263A"><title>Carnet de Forme</title><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"><\/script><script src="${fb}firebase-app-compat.js"><\/script><script src="${fb}firebase-auth-compat.js"><\/script><script src="${fb}firebase-firestore-compat.js"><\/script><script src="firebase-config.js"><\/script><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font-size:14px}img{max-width:100%}[hidden]{display:none!important}</style><style id="app-style">${style}</style></head><body><div id="app-root">${INITIAL_MARKUP}</div><script>window.__STANDALONE=true;window.__SEED=${seed};<\/script><script id="app-script">${script}<\/script></body></html>`;
+  return `<!doctype html><html lang="${LANG}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#14263A"><title>Forma</title><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"><\/script><script src="${fb}firebase-app-compat.js"><\/script><script src="${fb}firebase-auth-compat.js"><\/script><script src="${fb}firebase-firestore-compat.js"><\/script><script src="firebase-config.js"><\/script><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font-size:14px}img{max-width:100%}[hidden]{display:none!important}</style><style id="app-style">${style}</style></head><body><div id="app-root">${INITIAL_MARKUP}</div><script>window.__STANDALONE=true;window.__SEED=${seed};<\/script><script id="app-script">${script}<\/script></body></html>`;
 }
 const SW_JS=`const C="carnet-forme-v2";
 self.addEventListener("install",e=>{e.waitUntil(caches.open(C).then(c=>c.addAll(["./","./index.html","./manifest.webmanifest","./icon-192.png","./icon-512.png"])));self.skipWaiting();});
@@ -910,22 +984,29 @@ exports.handler = async (event) => {
   return json(400, { error: "bad_request" });
 };
 `;
-const FB_CFG=`// Colle ici la configuration de ton projet Firebase (la même que ta Matrice d'Eisenhower).
-// Console Firebase → Paramètres du projet → Vos applications → Configuration du SDK.
+const FB_CFG=`// Configuration Firebase de Forma (projet matrice-d-eisenhower-aa8df).
+// Ces valeurs sont publiques par nature : ce sont les règles Firestore qui protègent les données.
 window.FIREBASE_CONFIG = {
-  apiKey: "",
-  authDomain: "",
-  projectId: "",
-  appId: ""
+  apiKey: "AIzaSyDF6hKnOqaFM2CE06k-83Rgrahm8MKx0Zk",
+  authDomain: "matrice-d-eisenhower-aa8df.firebaseapp.com",
+  projectId: "matrice-d-eisenhower-aa8df",
+  storageBucket: "matrice-d-eisenhower-aa8df.firebasestorage.app",
+  messagingSenderId: "7353078163",
+  appId: "1:7353078163:web:af2e26ce5fd3a2f96d1866"
 };
 `;
-const README=`CARNET DE FORME — VERSION INSTALLABLE ET SYNCHRONISÉE
+const README=`FORMA — VERSION INSTALLABLE ET SYNCHRONISÉE
 =====================================================
 
 Cette version enregistre tes séances sur ton compte Google (Firebase, comme ta Matrice d'Eisenhower)
 et récupère automatiquement tes activités Garmin via Strava.
 
 1. FIREBASE (5 min)
+   Le plus simple : ouvre le site, onglet Activités ou Réglages → « Configurer ».
+   L'app affiche où trouver la configuration, une zone pour la coller, le domaine et la règle
+   à copier. Elle l'enregistre sur l'appareil et fournit un lien pour configurer tes autres appareils.
+
+   Sinon, à la main :
    a. Ouvre firebase-config.js et colle la configuration de ton projet Firebase existant
       (Console Firebase → ⚙ Paramètres du projet → Vos applications → Configuration du SDK).
    b. Authentication → Settings → Domaines autorisés → ajoute l'adresse de ton site Netlify
@@ -972,9 +1053,10 @@ et récupère automatiquement tes activités Garmin via Strava.
 Les séances déjà présentes sur l'appareil sont envoyées sur ton compte à la première connexion.
 Le coach IA reste disponible uniquement dans la version Claude ; les conseils automatiques fonctionnent partout.
 `;
+function MANIFEST(){ return {name:"Forma",short_name:"Forma",description:t("Planifie et suis ton entraînement","Plan and track your training"),lang:LANG,start_url:"./",scope:"./",display:"standalone",background_color:"#0E141A",theme_color:"#14263A",
+    icons:[{src:"icon-192.png",sizes:"192x192",type:"image/png"},{src:"icon-512.png",sizes:"512x512",type:"image/png",purpose:"any maskable"}]}; }
 async function buildPackage(withData=true){
-  const manifest={name:"Carnet de Forme",short_name:"Forme",lang:"fr",start_url:"./",scope:"./",display:"standalone",background_color:"#0E141A",theme_color:"#14263A",
-    icons:[{src:"icon-192.png",sizes:"192x192",type:"image/png"},{src:"icon-512.png",sizes:"512x512",type:"image/png",purpose:"any maskable"}]};
+  const manifest=MANIFEST();
   const z=new JSZip();
   z.file("index.html",standaloneHTML(withData)); z.file("manifest.webmanifest",JSON.stringify(manifest,null,2)); z.file("sw.js",SW_JS);
   z.file("firebase-config.js",FB_CFG); z.file("netlify/functions/strava.js",FN_JS);
@@ -987,7 +1069,7 @@ async function downloadApp(){
   const btns=[$("#dl-app"),$("#dl-app-2")].filter(Boolean); btns.forEach(b=>{b.disabled=true;b.textContent=t("Préparation…","Preparing…");});
   try{
     const data=await (await buildPackage(true)).generateAsync({type:"blob"});
-    const r=await S.dl.save({filename:"carnet-de-forme.zip",data});
+    const r=await S.dl.save({filename:"forma.zip",data});
     if(r&&r.status==="saved") toast(t("Application téléchargée. Suis LISEZMOI.txt pour la mettre en ligne.","App downloaded. Follow LISEZMOI.txt to put it online."));
   }catch(e){ if(e?.code==="unavailable"){ S.dl=null; $("#dl-app").hidden=true; } else toast(t("Téléchargement impossible pour le moment. Réessaie.","Download failed. Try again.")); }
   btns.forEach(b=>{b.disabled=false;b.textContent=t("Télécharger l'app","Download app");});
@@ -1016,11 +1098,12 @@ function render(){
   for(const id in kept){ const i=document.getElementById(id); if(i) i.value=kept[id]; }
 }
 function accountBlock(){
-  if(!S.fb||S.fb.state==="noconfig") return `<p class="muted" style="margin:0">${t("Synchronisation désactivée : remplis firebase-config.js avec la configuration de ton projet Firebase, puis redéploie.","Sync is off: fill in firebase-config.js with your Firebase project configuration, then redeploy.")}</p>`;
-  if(S.fb.state!=="in") return `<p class="muted" style="margin:0">${t("Connecte-toi avec Google pour retrouver tes séances sur tous tes appareils.","Sign in with Google to get your sessions on all your devices.")}</p><div class="row"><button class="btn small" id="fb-login-3">${t("Se connecter avec Google","Sign in with Google")}</button></div>`;
+  if(!S.fb||S.fb.state==="noconfig") return `<p class="muted" style="margin:0">${t("Synchronisation pas encore configurée. Colle la configuration de ton projet Firebase pour l'activer.","Sync isn't set up yet. Paste your Firebase project configuration to turn it on.")}</p><div class="row"><button class="btn small" id="fb-setup">${t("Configurer la synchronisation","Set up sync")}</button></div>`;
+  if(S.fb.state!=="in") return `<p class="muted" style="margin:0">${t("Connecte-toi avec Google pour retrouver tes séances sur tous tes appareils.","Sign in with Google to get your sessions on all your devices.")}</p><div class="row"><button class="btn small" id="fb-login-3">${t("Se connecter avec Google","Sign in with Google")}</button>${S.fbSource==="local"?`<button class="btn small ghost" id="fb-setup">${t("Modifier la configuration Firebase","Edit Firebase configuration")}</button>`:""}</div>`;
   const fn=S.stravaTok?.athlete?.firstname?` (${esc(S.stravaTok.athlete.firstname)})`:"";
   return `<p class="muted" style="margin:0">${t("Connecté avec","Signed in as")} <b>${esc(S.fb.user.email||S.fb.user.displayName||"Google")}</b>. ${S.stravaTok?t("Strava relié","Strava linked")+fn+".":t("Strava non relié.","Strava not linked.")}</p>
-    <div class="row"><button class="btn small ghost" id="fb-logout">${t("Se déconnecter","Sign out")}</button>${S.stravaTok?`<button class="btn small ghost" id="strava-unlink">${t("Déconnecter Strava","Unlink Strava")}</button>`:""}${S.stravaNeedsApp&&S.stravaApp?`<button class="btn small ghost" id="strava-app-reset">${t("Modifier l'app Strava","Change Strava app")}</button>`:""}</div>`;
+    <div class="row"><button class="btn small ghost" id="fb-logout">${t("Se déconnecter","Sign out")}</button>${S.stravaTok?`<button class="btn small ghost" id="strava-unlink">${t("Déconnecter Strava","Unlink Strava")}</button>`:""}${S.stravaNeedsApp&&S.stravaApp?`<button class="btn small ghost" id="strava-app-reset">${t("Modifier l'app Strava","Change Strava app")}</button>`:""}</div>
+    ${S.fbSource==="local"?`<div class="row"><button class="btn small ghost" data-copy="${esc(fbShareLink())}" data-label="${t("Lien de configuration","Setup link")}">${t("Copier le lien pour un autre appareil","Copy setup link for another device")}</button><button class="btn small ghost" id="fb-setup">${t("Modifier la configuration Firebase","Edit Firebase configuration")}</button></div><span class="hint">${t("Ouvre ce lien sur ton téléphone ou ton ordinateur : la configuration s'y installe toute seule.","Open this link on your phone or computer: the configuration installs itself.")}</span>`:""}`;
 }
 function isoWeek(d){ const x=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())); const n=x.getUTCDay()||7; x.setUTCDate(x.getUTCDate()+4-n); const y=new Date(Date.UTC(x.getUTCFullYear(),0,1)); return Math.ceil(((x-y)/864e5+1)/7); }
 
@@ -1323,13 +1406,19 @@ document.addEventListener("click",async e=>{
   if(el.dataset.editAct){ openAct(S.acts.find(a=>a.id===el.dataset.editAct)); return; }
   if(el.dataset.editPlan){ const p=PLANS().find(x=>x.id===el.dataset.editPlan); if(p) openPlan(p); return; }
   if(el.dataset.addPlan){ openPlan(null,el.dataset.addPlan); return; }
-  if(el.dataset.copy!==undefined){ const v=el.dataset.copy; try{ await navigator.clipboard.writeText(v); toast(t("Copié : ","Copied: ")+v); }catch(err){ const span=el.previousElementSibling; if(span){ const r=document.createRange(); r.selectNodeContents(span); const sel=getSelection(); sel.removeAllRanges(); sel.addRange(r); } toast(t("Sélectionné : copie-le avec ton clavier.","Selected: copy it with your keyboard.")); } return; }
+  if(el.dataset.copy!==undefined){ const v=el.dataset.copy; try{ await navigator.clipboard.writeText(v); toast(t("Copié : ","Copied: ")+(el.dataset.label||(v.length>48?v.slice(0,45)+"…":v))); }catch(err){ const span=el.previousElementSibling; if(span){ const r=document.createRange(); r.selectNodeContents(span); const sel=getSelection(); sel.removeAllRanges(); sel.addRange(r); } toast(t("Sélectionné : copie-le avec ton clavier.","Selected: copy it with your keyboard.")); } return; }
   switch(el.id){
     case "pick": $("#file-in").click(); break;
     case "add-act": openAct(null); break;
     case "ai-btn": runAI(); break;
     case "strava-sync": if(S.stravaMode==="api" && (!S.stravaTok || el.dataset.reconnect)) stravaAuthorize(); else syncStrava(); break;
     case "lang-btn": setLang(LANG==="en"?"fr":"en"); break;
+    case "fb-setup": openFbSetup(); break;
+    case "fb-save": {
+      const c=parseFbConfig($("#fb-paste").value);
+      if(!c){ toast(t("Configuration incomplète : copie tout le bloc firebaseConfig.","Incomplete configuration: copy the whole firebaseConfig block.")); break; }
+      try{ localStorage.setItem(FBK,JSON.stringify(c)); }catch(err){ toast(t("Impossible d'enregistrer sur cet appareil (navigation privée ?).","Can't save on this device (private browsing?).")); break; }
+      toast(t("Configuration enregistrée. Redémarrage…","Configuration saved. Restarting…")); setTimeout(()=>location.reload(),700); break; }
     case "sa-save": {
       const id=$("#sa-id").value.trim(), sec=$("#sa-secret").value.trim();
       if(!/^\d+$/.test(id)||sec.length<20){ toast(t("Vérifie le Client ID (que des chiffres) et le Client Secret (longue suite de caractères).","Check the Client ID (digits only) and the Client Secret (long string of characters).")); break; }

@@ -1,10 +1,15 @@
-CARNET DE FORME — VERSION INSTALLABLE ET SYNCHRONISÉE
+FORMA — VERSION INSTALLABLE ET SYNCHRONISÉE
 =====================================================
 
 Cette version enregistre tes séances sur ton compte Google (Firebase, comme ta Matrice d'Eisenhower)
 et récupère automatiquement tes activités Garmin via Strava.
 
 1. FIREBASE (5 min)
+   Le plus simple : ouvre le site, onglet Activités ou Réglages → « Configurer ».
+   L'app affiche où trouver la configuration, une zone pour la coller, le domaine et la règle
+   à copier. Elle l'enregistre sur l'appareil et fournit un lien pour configurer tes autres appareils.
+
+   Sinon, à la main :
    a. Ouvre firebase-config.js et colle la configuration de ton projet Firebase existant
       (Console Firebase → ⚙ Paramètres du projet → Vos applications → Configuration du SDK).
    b. Authentication → Settings → Domaines autorisés → ajoute l'adresse de ton site Netlify
