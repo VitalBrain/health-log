@@ -384,7 +384,7 @@ function openFbSetup(){
 async function initStandalone(){
   loadLocal();
   const cfg=getFbConfig();
-  fetch("/.netlify/functions/strava?action=config").then(async r=>{
+  S.configP = fetch("/.netlify/functions/strava?action=config").then(async r=>{
     const j=await r.json().catch(()=>null);
     if(r.ok&&j){ S.stravaFnOk=true; if(j.clientId&&!j.setup){ S.stravaClientId=j.clientId; } else S.stravaNeedsApp=true; resolveStravaMode(); }
     else S.stravaFnMissing = (j&&j.error==="missing_env") ? "env" : "fn";
@@ -795,7 +795,7 @@ function fromStravaApi(x){
     cal:x.calories??(x.kilojoules?Math.round(x.kilojoules):null),asc:x.total_elevation_gain?Math.round(x.total_elevation_gain):null,re:x.suffer_score??null,rpe:null,src:"strava"};
 }
 async function stravaPost(body){
-  if(S.stravaNeedsApp && S.stravaApp){ body={...body,client_id:S.stravaApp.clientId,client_secret:S.stravaApp.clientSecret}; }
+  if(S.stravaApp?.clientId && S.stravaApp?.clientSecret){ body={...body,client_id:S.stravaApp.clientId,client_secret:S.stravaApp.clientSecret}; }
   const r=await fetch("/.netlify/functions/strava",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
   const j=await r.json().catch(()=>({}));
   if(!r.ok) throw {code:r.status===401||r.status===400?"api_auth":"api_error",message:j.error,fields:j.fields||""};
@@ -823,6 +823,9 @@ async function handleStravaReturn(){
   if(err||!code){ toast(t("Connexion Strava annulée.","Strava connection cancelled.")); return; }
   if(!/activity:read/.test(u.searchParams.get("scope")||"")){ toast(t("Coche l'accès aux activités sur Strava pour pouvoir synchroniser.","Tick activity access on Strava so the app can sync.")); return; }
   try{
+    // attend la config du serveur et les identifiants Strava du compte avant l'échange
+    try{ await S.configP; }catch(e){}
+    if(!S.stravaApp && refs?.stravaApp){ try{ const sn=await refs.stravaApp.get(); S.stravaApp=sn.exists?sn.data():null; resolveStravaMode(); }catch(e){} }
     const tok=await stravaPost({action:"exchange",code});
     S.stravaTok=tok; await refs.strava.set(tok);
     toast(t("Strava connecté. Import de tes séances…","Strava connected. Importing your sessions…")); S.autoSynced=true; syncStrava();
