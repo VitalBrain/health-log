@@ -1121,15 +1121,15 @@ function openKofi(manual=false){
   if(!manual) kofiSave({last:Date.now()});
 }
 function maybeKofi(){
-  // après quelques ouvertures, au plus une fois par semaine, jamais par-dessus une autre fenêtre
-  const st=kofiState(); const opens=(st.opens||0)+1; kofiSave({opens});
-  setTimeout(()=>{
-    if(kofiOff()||opens<3) return;
-    if(st.last && Date.now()-st.last<7*864e5) return;
-    if($("#sheet-root").innerHTML) return;
-    if(isDemo()) return;
+  // à chaque ouverture de l'app, sauf si désactivé, dès qu'aucune autre fenêtre n'est ouverte
+  let tries=0;
+  const tick=()=>{
+    if(kofiOff()) return;
+    if(window.__STANDALONE && S.fb && S.fb.state==="noconfig") return;
+    if($("#sheet-root").innerHTML){ if(++tries<30) setTimeout(tick,1000); return; }
     openKofi(false);
-  },25000);
+  };
+  setTimeout(tick,1500);
 }
 
 /* ============ rendu ============ */
