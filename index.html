@@ -165,6 +165,18 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
 .check input{width:18px;height:18px;accent-color:var(--s-course)}
 .kofi-card{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:center}
 .kofi-card .cup{width:44px;height:44px;border-radius:12px;background:#FF5E5B;color:#fff;display:grid;place-items:center;font-size:22px}
+.lead{margin:0;font-size:15px;font-weight:500}
+.bullets{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px;color:var(--muted);font-size:14px}
+.lasthead{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.facts{display:flex;gap:6px;flex-wrap:wrap}
+.facts span{font-family:var(--f-mono);font-size:12.5px;background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:2px 7px}
+.chat{display:flex;flex-direction:column;gap:10px;max-height:min(60vh,560px);overflow-y:auto;padding:4px 2px}
+.msg{max-width:88%;padding:10px 12px;border-radius:14px;white-space:pre-wrap;font-size:14.5px;line-height:1.45;overflow-wrap:anywhere}
+.msg.user{align-self:flex-end;background:var(--btn);color:var(--btn-ink);border-bottom-right-radius:4px}
+.msg.bot{align-self:flex-start;background:var(--soft);border:1px solid var(--line);border-bottom-left-radius:4px}
+.msg.note{font-size:13px;color:var(--warn);background:transparent;border-style:dashed}
+.chat-in{display:flex;gap:8px;align-items:flex-end}
+.chat-in textarea{flex:1;min-width:0;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:9px 11px;resize:vertical;min-height:44px;font:inherit;color:inherit}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--btn);color:var(--btn-ink);padding:10px 16px;border-radius:10px;font-size:14px;z-index:60;max-width:calc(100% - 32px)}
 .empty{padding:18px;text-align:center;color:var(--muted);font-size:14px}
@@ -191,6 +203,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
     <button role="tab" data-tab="dash" aria-selected="true">Tableau de bord</button>
     <button role="tab" data-tab="plan" aria-selected="false">Planning</button>
     <button role="tab" data-tab="acts" aria-selected="false">Activités</button>
+    <button role="tab" data-tab="coach" aria-selected="false">Coach</button>
     <button role="tab" data-tab="evo" aria-selected="false">Évolution</button>
     <button role="tab" data-tab="set" aria-selected="false">Réglages</button>
   </div></nav>
@@ -274,7 +287,7 @@ function lsSet(){ try{ localStorage.setItem("carnet-forme-v1",JSON.stringify({ac
 let syncMsg=["wait","Connexion…","Connecting…"];
 function setSync(state,fr,en){ syncMsg=[state,fr,en??fr]; $("#sync").innerHTML = `<span class="dot ${state}"></span><span>${esc(t(syncMsg[1],syncMsg[2]))}</span>`; }
 function applyStatic(){
-  const tabs={dash:t("Tableau de bord","Dashboard"),plan:t("Planning","Plan"),acts:t("Activités","Activities"),evo:t("Évolution","Progress"),set:t("Réglages","Settings")};
+  const tabs={dash:t("Tableau de bord","Dashboard"),plan:t("Planning","Plan"),acts:t("Activités","Activities"),coach:"Coach",evo:t("Évolution","Progress"),set:t("Réglages","Settings")};
   document.querySelectorAll("nav.tabs button").forEach(b=>b.textContent=tabs[b.dataset.tab]);
   const set=(id,txt)=>{ const el=document.getElementById(id); if(el&&!el.disabled) el.textContent=txt; };
   set("fb-login",t("Se connecter","Sign in")); set("kofi-label",t("Soutenir","Support"));
@@ -421,7 +434,7 @@ async function initStandalone(){
 function attachFirestore(u){
   detachFb();
   const base=S.fb.db.collection("users").doc(u.uid);
-  refs={root:base.collection("forme").doc("settings"), strava:base.collection("forme").doc("strava"), stravaApp:base.collection("forme").doc("stravaApp"), acts:base.collection("formeActivities"), plans:base.collection("formePlans")};
+  refs={root:base.collection("forme").doc("settings"), strava:base.collection("forme").doc("strava"), stravaApp:base.collection("forme").doc("stravaApp"), coach:base.collection("forme").doc("coach"), acts:base.collection("formeActivities"), plans:base.collection("formePlans")};
   const pendActs=S.acts.filter(a=>!String(a.id).startsWith("demo")), pendPlans=S.plans.filter(p=>!String(p.id).startsWith("dp"));
   S.fb.state="in"; S.fb.user=u; S.mode="db"; S.actsServer=false; S.autoSynced=false;
   { const who=u.email||u.displayName||"Google"; setSync("ok",`Synchronisé · ${who}`,`Synced · ${who}`); }
@@ -435,6 +448,7 @@ function attachFirestore(u){
   }, fail));
   unsubs.push(refs.plans.onSnapshot(q=>{ S.plans=q.docs.map(d=>({id:d.id,...d.data()})); render(); }, ()=>{}));
   unsubs.push(refs.strava.onSnapshot(sn=>{ S.stravaTok=sn.exists?sn.data():null; S.stravaTokLoaded=true; maybeShowStravaSetup(); render(); maybeAutoSync(); }, ()=>{}));
+  unsubs.push(refs.coach.onSnapshot(sn=>{ S.coachKey=sn.exists?(sn.data().apiKey||null):null; if(S.tab==="coach"||S.tab==="set") render(); }, ()=>{}));
   unsubs.push(refs.stravaApp.onSnapshot(sn=>{ S.stravaApp=sn.exists?sn.data():null; stravaAppLoaded=true; resolveStravaMode(); render(); maybeAutoSync(); }, ()=>{}));
   handleStravaReturn();
 }
@@ -551,13 +565,7 @@ function advice(acts,plans){
   const last=(n)=>acts.filter(a=>inRange(a,addDays(td,-(n-1)),td));
   if(!acts.length){ out.push({lvl:"info",t:t("Importe tes premières séances","Import your first sessions"),b:t("Ajoute un export CSV de Garmin Connect dans l'onglet Activités pour obtenir des conseils basés sur ta charge réelle.","Add a Garmin Connect CSV export in the Activities tab, or connect Strava, to get advice based on your real training load.")}); return out; }
 
-  if(m.histDays<21) out.push({lvl:"info",t:t("Historique encore court","Short history so far"),b:t(`Seulement ${m.histDays} jours de données. Le ratio de charge devient fiable après 3 à 4 semaines : importe plus d'historique Garmin si tu l'as.`,`Only ${m.histDays} days of data. The load ratio becomes reliable after 3 to 4 weeks: import more Garmin history if you have it.`)});
-  else if(m.acwr>1.5) out.push({lvl:"bad",t:t("Pic de charge : lève le pied","Load spike: ease off"),b:t(`Ta charge des 7 derniers jours vaut ${m.acwr.toFixed(2).replace(".",DEC())}× ta moyenne sur 4 semaines. Au-delà de 1,5 le risque de blessure grimpe. Remplace la prochaine séance intense par de l'endurance facile ou un repos.`,`Your last 7 days of load are ${m.acwr.toFixed(2)}× your 4-week average. Above 1.5, injury risk climbs. Swap your next hard session for easy endurance or rest.`)});
-  else if(m.acwr>1.3) out.push({lvl:"warn",t:t("Charge en hausse rapide","Load rising fast"),b:t(`Ratio aigu/chronique à ${m.acwr.toFixed(2).replace(".",DEC())}. Garde les prochains jours en intensité basse avant d'ajouter du volume.`,`Acute:chronic ratio at ${m.acwr.toFixed(2)}. Keep the next few days at low intensity before adding volume.`)});
-  else if(m.acwr<0.8) out.push({lvl:"info",t:t("Tu as de la marge","You have room to add"),b:t(`Ta semaine est plus légère que d'habitude (ratio ${m.acwr.toFixed(2).replace(".",DEC())}). Si tu te sens bien, ajoute une séance facile ou allonge la sortie longue de 10 %.`,`This week is lighter than usual (ratio ${m.acwr.toFixed(2)}). If you feel good, add an easy session or extend your long session by 10%.`)});
-
-  if(m.tsb<-25) out.push({lvl:"bad",t:t("Fatigue accumulée","Accumulated fatigue"),b:t(`Ton indice de fraîcheur est à ${Math.round(m.tsb)}. Prévois 1 à 2 jours de récupération (sommeil, mobilité, séance très facile).`,`Your freshness score is ${Math.round(m.tsb)}. Plan 1 to 2 recovery days (sleep, mobility, a very easy session).`)});
-  else if(m.tsb>15 && m.histDays>=21) out.push({lvl:"info",t:t("Tu es frais","You're fresh"),b:t("Bon moment pour une séance clé ou un test (5 km, FTP, 400 m nage). Sans objectif proche, ta forme va baisser : relance le volume.","Good time for a key session or a test (5K, FTP, 400 m swim). With no event coming up, your fitness will drop: build volume again.")});
+  { const st=loadState(m); if(st.k!=="ok") out.push({lvl:st.lvl,t:st.l,b:stateSentence(st,m)}); }
 
   const run=(from,to)=>acts.filter(a=>a.sport==="course"&&inRange(a,from,to)).reduce((s,a)=>s+(a.dist||0),0);
   const r0=run(addDays(td,-6),td); const rPrev=[1,2,3].map(i=>run(addDays(td,-6-7*i),addDays(td,-7*i))); const rAvg=rPrev.reduce((s,x)=>s+x,0)/3;
@@ -634,7 +642,7 @@ function suggestWeek(monday,acts){
       if(sc<score){ score=sc; best=d; }
     }
     load[best]+=s.dur; if(s.int==="intense"||s.long) hard[best]=1;
-    res.push({date:dayKey(addDays(monday,best)),sport:s.sport,title:s.title,dur:s.dur,int:s.int,notes:t(`Proposé automatiquement : ${note}.`,`Suggested automatically: ${note}.`),gen:true});
+    res.push({date:dayKey(addDays(monday,best)),time:S.set.defTime||"18:00",sport:s.sport,title:s.title,dur:s.dur,int:s.int,notes:t(`Proposé automatiquement : ${note}.`,`Suggested automatically: ${note}.`),gen:true});
   }
   return res;
 }
@@ -890,6 +898,10 @@ async function syncStrava(){
       n++; setMsg(t(`Import des séances Strava… ${n}/${fresh.length}`,`Importing Strava sessions… ${n}/${fresh.length}`));
     }
     if(S.mode!=="db") lsSet();
+    if(fresh.length&&notifSupported()&&S.set.notifOn&&S.set.notifAnalysis!==false&&Notification.permission==="granted"){
+      const all=[...S.acts.filter(x=>!fresh.some(f=>f.id===x.id)),...fresh]; const A=analyzeLast(all,S.plans);
+      if(A) showNotif(t(`Séance analysée : ${A.a.title}`,`Session analyzed: ${A.a.title}`),`${A.tag} · ${A.facts.slice(0,3).join(" · ")} — ${A.verdict}`,"forma-last-"+A.a.id);
+    }
     S.set.stravaSync=new Date().toISOString();
     if(S.mode==="db"){ try{ await refs.root.set({...S.set}); }catch(e){} }
     setMsg(fresh.length?t(`${fresh.length} nouvelle(s) séance(s) importée(s) depuis Strava.`,`${fresh.length} new session(s) imported from Strava.`):t("Tout est à jour.","Everything is up to date."),false,false);
@@ -966,8 +978,9 @@ function standaloneHTML(withData=true){
   const fb="https://www.gstatic.com/firebasejs/10.12.2/";
   return `<!doctype html><html lang="${LANG}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#14263A"><title>Forma</title><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"><\/script><script src="${fb}firebase-app-compat.js"><\/script><script src="${fb}firebase-auth-compat.js"><\/script><script src="${fb}firebase-firestore-compat.js"><\/script><script src="firebase-config.js"><\/script><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font-size:14px}img{max-width:100%}[hidden]{display:none!important}</style><style id="app-style">${style}</style></head><body><div id="app-root">${INITIAL_MARKUP}</div><script>window.__STANDALONE=true;window.__SEED=${seed};<\/script><script id="app-script">${script}<\/script></body></html>`;
 }
-const SW_JS=`const C="carnet-forme-v2";
+const SW_JS=`const C="forma-v3";
 self.addEventListener("install",e=>{e.waitUntil(caches.open(C).then(c=>c.addAll(["./","./index.html","./manifest.webmanifest","./icon-192.png","./icon-512.png"])));self.skipWaiting();});
+self.addEventListener("notificationclick",e=>{e.notification.close();e.waitUntil(clients.matchAll({type:"window",includeUncontrolled:true}).then(cs=>cs.length?cs[0].focus():clients.openWindow("./")));});
 self.addEventListener("activate",e=>e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener("fetch",e=>{const u=new URL(e.request.url);if(e.request.method!=="GET"||u.origin!==location.origin||u.pathname.startsWith("/.netlify/")||u.search.includes("code="))return;
 e.respondWith(fetch(e.request).then(res=>{const cp=res.clone();caches.open(C).then(c=>c.put(e.request,cp));return res;}).catch(()=>caches.match(e.request).then(r=>r||caches.match("./index.html"))));});`;
@@ -1102,6 +1115,310 @@ if(window.__STANDALONE){
 }
 document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible" && S.set.stravaSync && Date.now()-Date.parse(S.set.stravaSync)>15*60e3 && S.autoSynced){ S.autoSynced=false; maybeAutoSync(); } });
 
+/* ============ analyse cohérente : semaine & dernière séance ============ */
+function median(a){ if(!a.length) return null; const s=[...a].sort((x,y)=>x-y); const k=s.length>>1; return s.length%2?s[k]:(s[k-1]+s[k])/2; }
+function hrrOf(a){ const {hrMax,hrRest}=S.set; return a.hr&&hrMax>hrRest ? Math.max(0,Math.min(1.1,(a.hr-hrRest)/(hrMax-hrRest))) : null; }
+function zoneOf(a){
+  const x=hrrOf(a);
+  const Z=[null,t("récupération","recovery"),t("endurance fondamentale","easy endurance"),t("tempo","tempo"),t("seuil","threshold"),t("très intense (VO2max)","very hard (VO2max)")];
+  let z=null;
+  if(x!=null) z = x<0.6?1 : x<0.7?2 : x<0.8?3 : x<0.9?4 : 5;
+  else if(a.rpe) z = a.rpe<=3?1 : a.rpe<=5?2 : a.rpe<=6?3 : a.rpe<=8?4 : 5;
+  return z ? {z,l:Z[z]} : null;
+}
+const speedOf = a => a.dist&&a.dur ? a.dist/(a.dur/3600) : null;
+function paceDelta(sport,sp,ref){
+  if(sport==="course"){ const d=Math.round(3600/sp-3600/ref); if(Math.abs(d)<3) return t("allure identique à ta moyenne récente","same pace as your recent average"); return d<0?t(`${-d} s/km plus rapide que ta moyenne récente`,`${-d} s/km faster than your recent average`):t(`${d} s/km plus lent que ta moyenne récente`,`${d} s/km slower than your recent average`); }
+  if(sport==="natation"){ const d=Math.round(360/sp-360/ref); if(Math.abs(d)<2) return t("allure identique à ta moyenne récente","same pace as your recent average"); return d<0?t(`${-d} s/100 m plus rapide que ta moyenne récente`,`${-d} s/100 m faster than your recent average`):t(`${d} s/100 m plus lent que ta moyenne récente`,`${d} s/100 m slower than your recent average`); }
+  const d=(sp-ref); if(Math.abs(d)<0.5) return t("vitesse identique à ta moyenne récente","same speed as your recent average");
+  const v=Math.abs(d).toFixed(1).replace(".",DEC()); return d>0?t(`${v} km/h plus rapide que ta moyenne récente`,`${v} km/h faster than your recent average`):t(`${v} km/h plus lent que ta moyenne récente`,`${v} km/h slower than your recent average`);
+}
+function dayName(k){ const d=parseDay(k), td=today0(); const diff=Math.round((d-td)/864e5); if(diff===0) return t("aujourd'hui","today"); if(diff===1) return t("demain","tomorrow"); if(diff===-1) return t("hier","yesterday"); return `${DAYS_L()[(d.getDay()+6)%7]} ${fmtDate(d)}`; }
+
+function loadState(m){
+  if(m.histDays<14) return {lvl:"info",k:"short",l:t("Historique court","Short history")};
+  if((m.acwr!=null&&m.acwr>1.5)||m.tsb<-30) return {lvl:"bad",k:"over",l:t("Surcharge","Overload")};
+  if((m.acwr!=null&&m.acwr>1.3)||m.tsb<-15) return {lvl:"warn",k:"build",l:t("Bloc chargé","Heavy block")};
+  if(m.histDays>=21&&m.acwr!=null&&m.acwr<0.8) return {lvl:"info",k:"low",l:t("Semaine allégée","Light week")};
+  return {lvl:"good",k:"ok",l:t("Équilibre","Balanced")};
+}
+function stateSentence(st,m){
+  const r=m.acwr!=null?m.acwr.toFixed(2).replace(".",DEC()):"—", f=Math.round(m.tsb);
+  switch(st.k){
+    case "over": return t(`Tu es en surcharge : ta charge des 7 derniers jours vaut ${r}× ta moyenne et ta fraîcheur est à ${f}. Termine la semaine en facile ou au repos.`,`You're overloaded: your last 7 days of load are ${r}× your average and freshness is at ${f}. Finish the week easy or resting.`);
+    case "build": return t(`Bloc chargé mais gérable (ratio ${r}, fraîcheur ${f}). Garde au plus une séance intense d'ici dimanche et dors bien.`,`Heavy but manageable block (ratio ${r}, freshness ${f}). Keep at most one hard session before Sunday and sleep well.`);
+    case "low": return t(`Semaine plus légère que d'habitude (ratio ${r}). Bon moment pour récupérer, ou ajoute une séance facile si tu te sens bien.`,`Lighter week than usual (ratio ${r}). A good time to recover, or add an easy session if you feel good.`);
+    case "short": return t("Historique encore court : les tendances deviendront fiables après 2 à 3 semaines de données.","Short history so far: trends become reliable after 2 to 3 weeks of data.");
+    default: return t(`Charge équilibrée (ratio ${r}, fraîcheur ${f}). Continue comme prévu.`,`Balanced load (ratio ${r}, freshness ${f}). Carry on as planned.`);
+  }
+}
+
+function analyzeLast(acts,plans){
+  if(!acts.length) return null;
+  const sorted=[...acts].sort((a,b)=>b.date.localeCompare(a.date)); const a=sorted[0];
+  const dk=a.date.slice(0,10), d=parseDay(dk), since=addDays(d,-42);
+  const peers=sorted.slice(1).filter(x=>x.sport===a.sport&&parseDay(x.date)>=since);
+  const L=load(a), Lmed=median(peers.map(load)), z=zoneOf(a), sp=speedOf(a);
+  const lines=[], facts=[fmtDur(a.dur)];
+  if(a.dist) facts.push(`${fmtKm(a.dist)} km`);
+  const p=paceStr(a.sport,a); if(p) facts.push(p);
+  if(a.hr) facts.push(`♥ ${Math.round(a.hr)}`);
+  facts.push(`${Math.round(L)} pts`);
+  if(z) lines.push(a.hr ? t(`Intensité : ${z.l} (FC moyenne ${Math.round(a.hr)}, ${Math.round(hrrOf(a)*100)} % de ta réserve cardiaque).`,`Intensity: ${z.l} (average HR ${Math.round(a.hr)}, ${Math.round(hrrOf(a)*100)}% of your heart-rate reserve).`) : t(`Intensité ressentie : ${z.l}.`,`Perceived intensity: ${z.l}.`));
+  let rel=null;
+  if(Lmed&&peers.length>=2){
+    rel=L/Lmed;
+    const lab = rel<0.7?t("plus légère que d'habitude","lighter than usual") : rel<=1.3?t("dans tes habitudes","in line with your usual") : rel<=1.8?t("plus costaude que d'habitude","harder than usual") : t("nettement plus exigeante que d'habitude","much harder than usual");
+    lines.push(t(`Charge : ${Math.round(L)} pts, ${lab} en ${SPORTS[a.sport].l.toLowerCase()} (médiane ${Math.round(Lmed)} pts sur 6 semaines).`,`Load: ${Math.round(L)} pts, ${lab} for ${SPORTS[a.sport].l.toLowerCase()} (median ${Math.round(Lmed)} pts over 6 weeks).`));
+  }
+  const peerSp=peers.map(speedOf).filter(Boolean);
+  if(sp&&peerSp.length>=2&&["course","velo","natation"].includes(a.sport)) lines.push(t("Vitesse : ","Speed: ")+paceDelta(a.sport,sp,median(peerSp))+".");
+  if(sp&&a.hr&&a.sport!=="natation"){
+    const eff=x=>speedOf(x)/x.hr; const pe=peers.filter(x=>speedOf(x)&&x.hr);
+    if(pe.length>=3){ const r=eff(a)/median(pe.map(eff))-1; const pc=Math.round(Math.abs(r)*100);
+      if(r>=0.03) lines.push(t(`Efficacité aérobie (vitesse par battement) +${pc} % : bon signe de progression d'endurance.`,`Aerobic efficiency (speed per heartbeat) +${pc}%: a good sign of endurance progress.`));
+      else if(r<=-0.03) lines.push(t(`Efficacité aérobie −${pc} % : fatigue, chaleur, dénivelé ou terrain lent possibles.`,`Aerobic efficiency −${pc}%: possibly fatigue, heat, climbing or slow terrain.`)); }
+  }
+  if(peers.length>=3){
+    if(a.dist&&a.dist>Math.max(...peers.map(x=>x.dist||0))) lines.push(t(`Plus longue distance en ${SPORTS[a.sport].l.toLowerCase()} depuis 6 semaines.`,`Longest ${SPORTS[a.sport].l.toLowerCase()} distance in 6 weeks.`));
+    else if(a.dur>Math.max(...peers.map(x=>x.dur||0))) lines.push(t(`Plus longue séance de ${SPORTS[a.sport].l.toLowerCase()} depuis 6 semaines.`,`Longest ${SPORTS[a.sport].l.toLowerCase()} session in 6 weeks.`));
+  }
+  const plan=plans.find(x=>x.date===dk&&x.sport===a.sport);
+  let lvl="good";
+  if(plan&&z){
+    if(plan.int==="facile"&&z.z>=3){ lvl="warn"; lines.push(t(`Prévue facile, réalisée en ${z.l} : garde tes séances faciles vraiment faciles pour mieux encaisser les dures.`,`Planned easy, done at ${z.l}: keep easy sessions truly easy so you absorb the hard ones better.`)); }
+    else if(plan.int==="intense"&&z.z<=2) lines.push(t("Prévue intense, restée en endurance : séance clé à replacer si tu te sens frais.","Planned hard, stayed easy: reschedule the key session if you feel fresh."));
+    else lines.push(t(`Conforme au plan (« ${plan.title} »).`,`Matches the plan (“${plan.title}”).`));
+  }
+  const longS=a.dur>=90*60;
+  const veryHard=(z&&z.z>=5)||(rel&&rel>1.8)||(z&&z.z>=4&&longS), hard=veryHard||(z&&z.z>=4)||(rel&&rel>1.3);
+  const moderate=!hard&&((z&&z.z===3)||(rel&&rel>1.1)||longS);
+  let verdict, tag;
+  if(veryHard){ lvl="warn"; tag=t("Très exigeante","Very hard"); verdict=t("Séance très exigeante. Compte environ 48 h avant ta prochaine séance intense : sommeil, hydratation, et de l'endurance facile entre-temps.","Very demanding session. Allow about 48 h before your next hard session: sleep, hydration, and easy endurance in between."); }
+  else if(hard){ lvl=lvl==="good"?"info":lvl; tag=t("Costaude","Hard"); verdict=t("Bonne séance de qualité. Garde 24 à 48 h faciles avant de remettre de l'intensité.","Solid quality session. Keep 24 to 48 h easy before adding intensity again."); }
+  else if(moderate){ lvl=lvl==="good"?"info":lvl; tag=t("Modérée","Moderate"); verdict=t(`Séance modérée${longS?" et longue":""} : elle compte dans ta fatigue. Garde au moins 24 h faciles avant une séance intense.`,`Moderate${longS?", long":""} session: it adds to your fatigue. Keep at least 24 easy hours before a hard session.`); }
+  else { tag=t("Facile","Easy"); verdict=t("Séance facile qui construit ton endurance sans trop fatiguer : tu peux enchaîner normalement.","Easy session that builds endurance without much fatigue: you can carry on as normal."); }
+  const st=loadState(metrics(acts));
+  if(st.k==="over"){ lvl=lvl==="good"||lvl==="info"?"warn":lvl; verdict+=" "+t("Mais ta charge globale est en surcharge : priorité à la récupération ces prochains jours.","But your overall load is in overload: prioritize recovery over the next few days."); }
+  else if(st.k==="build"&&(hard||moderate)) verdict+=" "+t("Ta semaine est déjà chargée : reste en facile jusqu'à ta prochaine séance clé.","Your week is already heavy: stay easy until your next key session.");
+  let next="";
+  const np=plans.filter(x=>x.date>dk&&x.date>=dayKey(today0())).sort((x,y)=>x.date.localeCompare(y.date))[0];
+  if(np){
+    const gap=Math.round((parseDay(np.date)-d)/864e5);
+    if((hard||moderate||st.k==="over")&&np.int==="intense"&&gap<=1) next=t(`Ta prochaine séance prévue, « ${np.title} » (${dayName(np.date)}), est intense : décale-la d'un jour ou passe-la en facile.`,`Your next planned session, “${np.title}” (${dayName(np.date)}), is hard: move it a day or make it easy.`);
+    else next=t(`Prochaine séance prévue : « ${np.title} », ${dayName(np.date)}, ${np.dur} min.`,`Next planned session: “${np.title}”, ${dayName(np.date)}, ${np.dur} min.`);
+  }
+  return {a,facts,lines,verdict,tag,lvl,next,hard:hard||moderate,veryHard,z};
+}
+
+function analyzeWeek(acts,plans){
+  const td=today0(), mon=startOfWeek(td), dayIdx=(td.getDay()+6)%7, tk=dayKey(td);
+  const inW=(x,a,b)=>{ const d=parseDay(x.date); return d>=a&&d<b; };
+  const sec=xs=>xs.reduce((s,x)=>s+(x.dur||0),0);
+  const cur=acts.filter(x=>inW(x,mon,addDays(td,1)));
+  const prevTo=[1,2,3,4].map(i=>{ const s=addDays(mon,-7*i); return acts.filter(x=>inW(x,s,addDays(s,dayIdx+1))); });
+  const avgTo=prevTo.map(sec).reduce((s,x)=>s+x,0)/4, avgN=prevTo.reduce((s,x)=>s+x.length,0)/4;
+  const m=metrics(acts), st=loadState(m), lines=[];
+  const h=sec(cur)/3600;
+  if(avgTo>600){ const pc=Math.round((sec(cur)/avgTo-1)*100);
+    lines.push(t(`${fmtH(sec(cur))} h et ${cur.length} séance(s) depuis lundi, contre ${fmtH(avgTo)} h en moyenne à ce stade de la semaine (${pc>=0?"+":""}${pc} %).`,`${fmtH(sec(cur))} h and ${cur.length} session(s) since Monday, vs ${fmtH(avgTo)} h on average at this point of the week (${pc>=0?"+":""}${pc}%).`)); }
+  else lines.push(t(`${fmtH(sec(cur))} h et ${cur.length} séance(s) depuis lundi.`,`${fmtH(sec(cur))} h and ${cur.length} session(s) since Monday.`));
+  const by={}; cur.forEach(x=>{ by[x.sport]=by[x.sport]||{n:0,km:0,s:0}; by[x.sport].n++; by[x.sport].km+=x.dist||0; by[x.sport].s+=x.dur; });
+  const parts=Object.entries(by).sort((a,b)=>b[1].s-a[1].s).map(([k,v])=>`${SPORTS[k].l} ${v.n}×${v.km?` · ${fmtKm(v.km)} km`:` · ${fmtDur(v.s)}`}`);
+  if(parts.length) lines.push(parts.join(" — "));
+  const hardN=cur.filter(x=>{ const z=zoneOf(x); return z?z.z>=4:isHard(x); }).length;
+  if(cur.length){ lines.push(hardN>=3?t(`${hardN} séances intenses cette semaine : c'est beaucoup, vise 1 à 2.`,`${hardN} hard sessions this week: that's a lot, aim for 1 to 2.`):t(`${hardN} séance(s) intense(s) sur ${cur.length}.`,`${hardN} hard session(s) out of ${cur.length}.`)); }
+  const wp=plans.filter(p=>{ const d=parseDay(p.date); return d>=mon&&d<addDays(mon,7); });
+  const doneP=wp.filter(p=>p.date<=tk&&acts.some(a=>a.date.slice(0,10)===p.date&&a.sport===p.sport));
+  const missed=wp.filter(p=>p.date<tk&&!doneP.includes(p));
+  const remaining=wp.filter(p=>p.date>tk||(p.date===tk&&!doneP.includes(p)));
+  if(wp.length) lines.push(t(`Planning : ${doneP.length}/${wp.length} séance(s) faite(s)${missed.length?`, ${missed.length} manquée(s)`:""}${remaining.length?`, ${remaining.length} à venir`:""}.`,`Plan: ${doneP.length}/${wp.length} session(s) done${missed.length?`, ${missed.length} missed`:""}${remaining.length?`, ${remaining.length} to come`:""}.`));
+  const remMin=remaining.reduce((s,p)=>s+(+p.dur||0),0);
+  if(remMin){ const proj=h+remMin/60; lines.push(t(`Avec les séances restantes, tu finirais vers ${proj.toFixed(1).replace(".",DEC())} h${S.set.goalH?` (objectif ${S.set.goalH} h)`:""}.`,`With the remaining sessions you'd finish around ${proj.toFixed(1)} h${S.set.goalH?` (goal ${S.set.goalH} h)`:""}.`)); }
+  let verdict=stateSentence(st,m);
+  if((st.k==="over"||st.k==="build")){ const hardRem=remaining.filter(p=>p.int==="intense"); if(hardRem.length>(st.k==="over"?0:1)) verdict+=" "+t(`Passe « ${hardRem[0].title} » (${dayName(hardRem[0].date)}) en facile.`,`Make “${hardRem[0].title}” (${dayName(hardRem[0].date)}) easy.`); }
+  if(st.k==="low"&&!remaining.length&&dayIdx<5) verdict+=" "+t("Rien n'est prévu d'ici dimanche : « Proposer ma semaine » peut t'aider.","Nothing planned before Sunday: “Suggest my week” can help.");
+  return {st,m,lines,verdict,cur,remaining,missed,hardN,h};
+}
+
+/* ============ coach (bot) ============ */
+const CHAT_K="forma-chat";
+S.chat=(()=>{ try{ return JSON.parse(localStorage.getItem(CHAT_K)||"[]"); }catch(e){ return []; } })();
+S.chatBusy=false;
+function saveChat(){ try{ localStorage.setItem(CHAT_K,JSON.stringify(S.chat.filter(m=>!m.live).slice(-40))); }catch(e){} }
+function coachKey(){ if(S.coachKey) return S.coachKey; try{ return localStorage.getItem("forma-anthropic-key")||null; }catch(e){ return null; } }
+function coachEngine(){
+  if(S.set.coachEngine==="local") return "local";
+  if(S.sample) return "claude-sample";
+  if(window.__STANDALONE&&coachKey()) return "claude-api";
+  return "local";
+}
+function engineLabel(e){ return e==="claude-sample"?t("Claude, via ton compte Claude","Claude, via your Claude account"):e==="claude-api"?t("Claude, via ta clé API","Claude, via your API key"):t("Coach Forma (gratuit, sans IA externe)","Forma coach (free, no external AI)"); }
+function coachSystem(){
+  const acts=ACTS(), plans=PLANS(), m=metrics(acts), W=analyzeWeek(acts,plans), A=analyzeLast(acts,plans), td=today0();
+  const recent=[...acts].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,14).map(a=>`${a.date.slice(0,10)} ${SPORTS[a.sport].l} « ${a.title} » ${fmtDur(a.dur)}${a.dist?" "+fmtKm(a.dist)+" km":""}${paceStr(a.sport,a)?" "+paceStr(a.sport,a):""}${a.hr?" FC "+Math.round(a.hr):""}${a.rpe?" RPE "+a.rpe:""} charge ${Math.round(load(a))}`);
+  const up=plans.filter(p=>p.date>=dayKey(td)).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,10).map(p=>`${p.date}${p.time?" "+p.time:""} ${SPORTS[p.sport].l} « ${p.title} » ${p.dur} min ${INT()[p.int]||""}`);
+  const vol=weeksBack(8).map(w=>{ const xs=acts.filter(a=>parseDay(a.date)>=w&&parseDay(a.date)<addDays(w,7)); return `S${isoWeek(w)}: ${(xs.reduce((s,a)=>s+a.dur,0)/3600).toFixed(1)} h, ${xs.length} séances`; });
+  return `Tu es le coach de l'app Forma, entraîneur multisport expérimenté (course, vélo, natation, renforcement/calisthénie, basket).
+Règles : réponds en ${LANG==="en"?"anglais":"français"}${LANG==="en"?"":", en tutoyant"}, ton direct, concret et bienveillant. 150 mots maximum sauf si on te demande un plan détaillé. Pas de titres markdown ; listes avec « - » autorisées. Appuie-toi uniquement sur les données ci-dessous, cite des chiffres, n'invente rien, et dis quand une donnée manque. Reste cohérent avec le bilan calculé par l'app. En cas de douleur ou de symptôme, conseille de consulter un professionnel de santé.
+
+Date du jour : ${dayKey(td)} (${DAYS_L()[(td.getDay()+6)%7]}).
+Profil : FC max ${S.set.hrMax}, FC repos ${S.set.hrRest}, objectif ${S.set.goalH} h/semaine, jour de repos ${DAYS_L()[S.set.restDay??0]}, objectif principal : ${S.set.goal||"non précisé"}.
+Indicateurs : forme CTL ${m.ctl.toFixed(0)}, fatigue ATL ${m.atl.toFixed(0)}, fraîcheur TSB ${m.tsb.toFixed(0)}, ratio aigu/chronique ${m.acwr!=null?m.acwr.toFixed(2):"n/d"}, état « ${W.st.l} », historique ${m.histDays} jours.
+Bilan de la semaine (calculé par l'app) : ${W.verdict} ${W.lines.join(" ")}
+Dernière séance (calculée par l'app) : ${A?`${A.a.date.slice(0,10)} ${SPORTS[A.a.sport].l} « ${A.a.title} ». ${A.verdict} ${A.lines.join(" ")} ${A.next}`:"aucune"}
+14 dernières séances :
+${recent.join("\n")||"aucune"}
+Planning à venir :
+${up.join("\n")||"aucune séance planifiée"}
+Volume des 8 dernières semaines :
+${vol.join("\n")}`;
+}
+function trendText(acts){
+  const td=today0(); const cands=["course","velo","natation"].map(k=>[k,acts.filter(a=>a.sport===k&&speedOf(a)&&parseDay(a.date)>=addDays(td,-56)).length]).sort((a,b)=>b[1]-a[1]);
+  const [sp,n]=cands[0]||[]; if(!sp||n<4) return t("Pas encore assez de séances avec distance pour mesurer une progression (il en faut au moins 4 sur 8 semaines).","Not enough sessions with distance yet to measure progress (at least 4 over 8 weeks).");
+  const rec=acts.filter(a=>a.sport===sp&&speedOf(a)&&parseDay(a.date)>=addDays(td,-28)).map(speedOf), old=acts.filter(a=>a.sport===sp&&speedOf(a)&&parseDay(a.date)<addDays(td,-28)&&parseDay(a.date)>=addDays(td,-56)).map(speedOf);
+  if(rec.length<2||old.length<2) return t(`En ${SPORTS[sp].l.toLowerCase()}, il me faut des séances sur les deux dernières périodes de 4 semaines pour comparer.`,`For ${SPORTS[sp].l.toLowerCase()}, I need sessions in both of the last two 4-week periods to compare.`);
+  return t(`${SPORTS[sp].l} : sur les 4 dernières semaines, ${paceDelta(sp,median(rec),median(old)).replace("ta moyenne récente","les 4 semaines d'avant")} (médianes). Regarde aussi l'onglet Évolution pour la FC à allure égale.`,`${SPORTS[sp].l}: over the last 4 weeks, ${paceDelta(sp,median(rec),median(old)).replace("your recent average","the 4 weeks before")} (medians). Check the Progress tab for heart rate at equal pace too.`);
+}
+function localReply(q){
+  const x=norm(q), acts=ACTS(), plans=PLANS();
+  const has=(...k)=>k.some(w=>x.includes(w));
+  if(!acts.length) return t("Je n'ai pas encore de séances à analyser. Connecte Strava ou importe un export Garmin dans l'onglet Activités.","I don't have any sessions to analyze yet. Connect Strava or import a Garmin export in the Activities tab.");
+  const W=analyzeWeek(acts,plans), A=analyzeLast(acts,plans), m=W.m, td=today0(), tk=dayKey(td);
+  const weekTxt=()=>`${W.verdict}\n- ${W.lines.join("\n- ")}`;
+  const lastTxt=()=>A?`${t("Dernière séance","Last session")} : ${A.a.title} (${dayName(A.a.date.slice(0,10))}, ${A.facts.join(" · ")}).\n${A.verdict}\n- ${A.lines.join("\n- ")}${A.next?`\n${A.next}`:""}`:"";
+  if(has("bonjour","salut","hello","coucou","hey ","bonsoir")||x==="hi") return t(`Salut ! Je suis le coach Forma. En bref : ${W.st.l.toLowerCase()}. Demande-moi ton bilan de la semaine, l'analyse de ta dernière séance, quoi faire demain, ta fatigue ou ta progression.`,`Hi! I'm the Forma coach. In short: ${W.st.l.toLowerCase()}. Ask me for your weekly review, your last session analysis, what to do tomorrow, your fatigue or your progress.`);
+  if(has("semaine","week","bilan","recap","resume","review")&&!has("prochaine","next","planifi","propose")) return weekTxt()+(has("derniere","last")&&A?"\n\n"+lastTxt():"");
+  if(has("derniere","dernier","last","hier","yesterday","ma sortie","ma seance","mon footing","mon entrainement","analyse")&&!has("prochaine","next","demain","tomorrow")) return lastTxt();
+  if(has("demain","tomorrow","aujourd","today","que faire","quoi faire","what should","prochaine","next","ce soir","tonight")){
+    const todayP=plans.filter(p=>p.date===tk&&!acts.some(a=>a.date.slice(0,10)===tk&&a.sport===p.sport));
+    const tomP=plans.filter(p=>p.date===dayKey(addDays(td,1)));
+    const askTom=has("demain","tomorrow"); const list=askTom?tomP:(todayP.length?todayP:tomP); const when=askTom||!todayP.length?t("Demain","Tomorrow"):t("Aujourd'hui","Today");
+    if(W.st.k==="over") return t(`Vu ta charge (${W.st.l.toLowerCase()}, fraîcheur ${Math.round(m.tsb)}), le mieux est un repos ou 30 à 40 min très faciles.${list.length?` Si tu gardes « ${list[0].title} », fais-le en facile.`:""}`,`Given your load (${W.st.l.toLowerCase()}, freshness ${Math.round(m.tsb)}), rest or 30–40 easy minutes is best.${list.length?` If you keep “${list[0].title}”, do it easy.`:""}`);
+    if(list.length){ let s=`${when} : `+list.map(p=>`« ${p.title} »${p.time?` à ${p.time}`:""}, ${p.dur} min, ${(INT()[p.int]||"").toLowerCase()}`).join(" ; ")+".";
+      if(A&&A.hard&&list.some(p=>p.int==="intense")&&parseDay(A.a.date)>=addDays(td,-1)) s+=" "+t("Ta dernière séance était déjà costaude : garde l'intensité pour après-demain si tu sens de la fatigue.","Your last session was already hard: save the intensity for the day after if you feel tired.");
+      return s; }
+    const last=SK.filter(k=>k!=="autre").map(k=>[k,acts.filter(a=>a.sport===k).map(a=>a.date).sort().pop()||""]).filter(e=>e[1]).sort((a,b)=>a[1].localeCompare(b[1]))[0];
+    return t(`Rien de prévu ${when.toLowerCase()}. Vu ta semaine (${W.st.l.toLowerCase()}), une séance facile de 40 à 50 min serait adaptée${last?`, par exemple en ${SPORTS[last[0]].l.toLowerCase()} que tu n'as pas fait depuis ${dayName(last[1].slice(0,10))}`:""}.`,`Nothing planned ${when.toLowerCase()}. Given your week (${W.st.l.toLowerCase()}), an easy 40–50 min session would fit${last?`, e.g. ${SPORTS[last[0]].l.toLowerCase()}, last done ${dayName(last[1].slice(0,10))}`:""}.`);
+  }
+  if(has("fatigu","tired","frais","fresh","recup","recover","charge","load","forme","fitness","tsb","surentrain","overtrain")) return `${W.st.l}. ${W.verdict}\n- ${t("Forme (CTL)","Fitness (CTL)")} ${Math.round(m.ctl)} · ${t("fatigue (ATL)","fatigue (ATL)")} ${Math.round(m.atl)} · ${t("fraîcheur (TSB)","freshness (TSB)")} ${Math.round(m.tsb)}`;
+  if(has("planning","programme","plan ","schedule","planifi","propose")){ const up=plans.filter(p=>p.date>=tk).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,6);
+    return up.length?t("Au programme :\n","Coming up:\n")+up.map(p=>`- ${dayName(p.date)} : ${p.title} (${p.dur} min, ${(INT()[p.int]||"").toLowerCase()})`).join("\n")+(W.st.k==="over"||W.st.k==="build"?"\n"+t("Vu ta charge, garde au plus une séance intense dans ce programme.","Given your load, keep at most one hard session in this plan."):""):t("Aucune séance planifiée. Ouvre l'onglet Planning et touche « Proposer ma semaine ».","No sessions planned. Open the Plan tab and tap “Suggest my week”."); }
+  if(has("allure","pace","vitesse","speed","progres","progress","ameliore","improv","plus vite","faster")) return trendText(acts);
+  if(has("objectif","goal")) return t(`Cette semaine : ${fmtH(W.h*3600)} h sur ${S.set.goalH} h visées.`,`This week: ${fmtH(W.h*3600)} h of ${S.set.goalH} h targeted.`)+(W.remaining.length?" "+W.lines[W.lines.length-1]:"");
+  if(has("conseil","advice","tip","astuce")) return advice(acts,plans).slice(0,3).map(a=>`- ${a.t} : ${a.b}`).join("\n");
+  return t(`Je suis le coach gratuit : je réponds à partir de tes données sur ta semaine, ta dernière séance, quoi faire aujourd'hui ou demain, ta fatigue, ton planning, ta progression ou tes objectifs. Pour des questions libres, active Claude dans Réglages → Coach.`,`I'm the free coach: I answer from your data about your week, your last session, what to do today or tomorrow, fatigue, your plan, progress or goals. For open questions, turn on Claude in Settings → Coach.`);
+}
+function chatTurns(){
+  const msgs=[]; for(const m of S.chat){ if(m.live||m.err) continue; const role=m.role==="user"?"user":"assistant"; if(msgs.length&&msgs[msgs.length-1].role===role) msgs[msgs.length-1].content+="\n"+m.text; else msgs.push({role,content:m.text}); }
+  while(msgs.length&&msgs[0].role!=="user") msgs.shift();
+  return msgs.slice(-12);
+}
+async function askCoach(q){
+  q=String(q||"").trim(); if(!q||S.chatBusy) return;
+  S.chat.push({role:"user",text:q}); S.chatBusy=true; S.tab="coach"; saveChat(); render();
+  const eng=coachEngine(); let reply="", engUsed=eng, note="";
+  const live={role:"bot",text:"…",live:true}; S.chat.push(live); render();
+  try{
+    if(eng==="local"){ await new Promise(r=>setTimeout(r,300)); reply=localReply(q); }
+    else if(eng==="claude-sample"){
+      const turns=[{role:"user",content:coachSystem()},{role:"assistant",content:t("Compris, je réponds en m'appuyant sur ces données.","Understood, I'll answer based on this data.")},...chatTurns()];
+      const r=await S.sample(turns,{modelTier:"default",cache:false,onText:({text})=>{ live.text=text; const el=$("#msg-live"); if(el) el.innerHTML=fmtMsg(text); }});
+      reply=r.text;
+    } else {
+      const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"x-api-key":coachKey(),"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
+        body:JSON.stringify({model:"claude-haiku-5-5",max_tokens:900,system:coachSystem(),messages:chatTurns()})});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok){ const msg=d?.error?.message||""; throw {code:r.status===401?"bad_key":/credit|billing/i.test(msg)?"credit":r.status===429||r.status===529?"busy":"api",message:msg}; }
+      reply=(d.content||[]).filter(c=>c.type==="text").map(c=>c.text).join("").trim();
+    }
+  }catch(e){
+    engUsed="local"; reply=localReply(q);
+    note = e?.code==="bad_key"?t("Clé API refusée : vérifie-la dans Réglages → Coach.","API key rejected: check it in Settings → Coach.")
+      : e?.code==="credit"?t("Ton compte API Anthropic n'a plus de crédit.","Your Anthropic API account is out of credit.")
+      : e?.code==="busy"||e?.code==="rate_limited"?t("Claude est très sollicité en ce moment.","Claude is busy right now.")
+      : e?.code==="not_granted"?t("Claude n'a pas été autorisé pour cette page.","Claude wasn't allowed for this page.")
+      : t("Claude n'a pas répondu.","Claude didn't respond.");
+    note+=" "+t("Réponse du coach gratuit :","Free coach answer:");
+    if(e?.code==="not_granted") S.sample=null;
+  }
+  S.chat=S.chat.filter(m=>m!==live);
+  if(note) S.chat.push({role:"bot",text:note,err:true});
+  S.chat.push({role:"bot",text:reply||t("Je n'ai pas de réponse pour l'instant.","I don't have an answer right now."),eng:engUsed});
+  S.chatBusy=false; saveChat(); render();
+}
+function fmtMsg(s){ return esc(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>"); }
+function viewCoach(){
+  const eng=coachEngine();
+  const chips=[t("Analyse ma semaine","Review my week"),t("Analyse ma dernière séance","Analyze my last session"),t("Que faire demain ?","What should I do tomorrow?"),t("Suis-je fatigué ?","Am I tired?"),t("Est-ce que je progresse ?","Am I improving?")];
+  const msgs=S.chat.length?S.chat.map(m=>`<div class="msg ${m.role==="user"?"user":"bot"}${m.err?" note":""}"${m.live?' id="msg-live"':""}>${fmtMsg(m.text)}</div>`).join("")
+    :`<div class="msg bot">${t("Salut ! Je connais ta semaine, ta dernière séance et ton planning. Pose-moi une question ou choisis une suggestion.","Hi! I know your week, your last session and your plan. Ask me a question or pick a suggestion.")}</div>`;
+  return `<div class="stack">
+  <section class="card stack coach">
+    <div class="row between"><h2>Coach</h2><span class="pill ${eng==="local"?"mut":"good"}">${engineLabel(eng)}</span></div>
+    <div class="chat" id="chat">${msgs}</div>
+    <div class="chips">${chips.map(c=>`<button class="chip" data-ask="${esc(c)}" ${S.chatBusy?"disabled":""}>${c}</button>`).join("")}</div>
+    <div class="chat-in"><label for="chat-in" class="sr">${t("Ton message","Your message")}</label><textarea id="chat-in" data-keep rows="2" placeholder="${t("Écris ta question…","Type your question…")}"></textarea><button class="btn" id="chat-send" ${S.chatBusy?"disabled":""}>${t("Envoyer","Send")}</button></div>
+    <div class="row between"><span class="hint">${eng==="local"?t("Le coach gratuit répond à partir de tes données, sans IA externe. Pour des questions libres, active Claude dans Réglages → Coach.","The free coach answers from your data, with no external AI. For open questions, turn on Claude in Settings → Coach."):t("Claude reçoit le résumé de tes séances pour te répondre.","Claude receives a summary of your sessions to answer you.")}</span>${S.chat.length?`<button class="icon-btn" id="chat-clear">${t("Effacer la conversation","Clear conversation")}</button>`:""}</div>
+  </section></div>`;
+}
+
+/* ============ rappels & calendrier ============ */
+const NK="forma-notified";
+const notifSupported=()=>!!window.__STANDALONE && "Notification" in window;
+let notifTimers=[];
+async function showNotif(title,body,tag){
+  try{ const reg=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration(); if(reg) return reg.showNotification(title,{body,tag,icon:"icon-192.png",badge:"icon-192.png"}); new Notification(title,{body,tag,icon:"icon-192.png"}); }catch(e){}
+}
+function scheduleNotifs(){
+  notifTimers.forEach(clearTimeout); notifTimers=[];
+  if(!notifSupported()||!S.set.notifOn||Notification.permission!=="granted") return;
+  const lead=(+S.set.notifLead||30)*60e3, now=Date.now();
+  let sent={}; try{ sent=JSON.parse(localStorage.getItem(NK)||"{}"); }catch(e){}
+  for(const p of S.plans){
+    const time=p.time||S.set.defTime||"18:00"; const start=new Date(`${p.date}T${time}`).getTime(); const key=`${p.id}@${p.date}T${time}`;
+    if(sent[key]||isNaN(start)||start<now) continue;
+    const delay=Math.max(0,start-lead-now); if(delay>864e5) continue;
+    notifTimers.push(setTimeout(()=>{
+      showNotif(t(`${time} : ${p.title}`,`${time}: ${p.title}`),`${SPORTS[p.sport].l} · ${p.dur} min · ${INT()[p.int]||""}`,key);
+      sent[key]=1; try{ localStorage.setItem(NK,JSON.stringify(sent)); }catch(e){}
+    },delay));
+  }
+}
+let notifDeb=null; function scheduleNotifsSoon(){ clearTimeout(notifDeb); notifDeb=setTimeout(scheduleNotifs,800); }
+async function setNotif(on){
+  if(on){
+    if(!notifSupported()){ toast(t("Notifications indisponibles ici.","Notifications aren't available here.")); return; }
+    const p=await Notification.requestPermission();
+    if(p!=="granted"){ toast(t("Notifications refusées : autorise-les dans les réglages du navigateur pour ce site.","Notifications denied: allow them in your browser settings for this site.")); S.set.notifOn=false; saveSettings(); render(); return; }
+    if(S.set.notifAnalysis===undefined) S.set.notifAnalysis=true;
+    showNotif("Forma",t("Les rappels de séance sont activés.","Session reminders are on."),"forma-test");
+  }
+  S.set.notifOn=on; saveSettings(); scheduleNotifs(); render();
+}
+function icsEsc(s){ return String(s||"").replace(/\\/g,"\\\\").replace(/\n/g,"\\n").replace(/([,;])/g,"\\$1"); }
+async function exportWeekIcs(){
+  const mon=addDays(startOfWeek(today0()),S.weekOff*7), keys=[0,1,2,3,4,5,6].map(i=>dayKey(addDays(mon,i)));
+  const ps=PLANS().filter(p=>keys.includes(p.date));
+  if(!ps.length){ toast(t("Aucune séance planifiée cette semaine.","No sessions planned this week.")); return; }
+  const lead=+S.set.notifLead||30, stamp=new Date().toISOString().replace(/[-:]/g,"").slice(0,15)+"Z";
+  const fmt=d=>`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}00`;
+  const L=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Forma//Training//FR","CALSCALE:GREGORIAN","METHOD:PUBLISH"];
+  for(const p of ps){
+    const s=new Date(`${p.date}T${p.time||S.set.defTime||"18:00"}`), e=new Date(s.getTime()+(+p.dur||45)*60e3);
+    L.push("BEGIN:VEVENT",`UID:${p.id}-${p.date}@forma`,`DTSTAMP:${stamp}`,`DTSTART:${fmt(s)}`,`DTEND:${fmt(e)}`,`SUMMARY:${icsEsc(p.title)}`,
+      `DESCRIPTION:${icsEsc(`${SPORTS[p.sport].l} · ${p.dur} min · ${INT()[p.int]||""}${p.notes?"\n"+p.notes:""}`)}`,
+      "BEGIN:VALARM","ACTION:DISPLAY",`DESCRIPTION:${icsEsc(p.title)}`,`TRIGGER:-PT${lead}M`,"END:VALARM","END:VEVENT");
+  }
+  L.push("END:VCALENDAR");
+  const text=L.join("\r\n"), filename=`forma-${t("semaine","week")}-${isoWeek(mon)}.ics`;
+  if(S.dl){ try{ const r=await S.dl.save({filename,data:text}); if(r&&r.status==="saved") toast(t("Fichier calendrier enregistré : ouvre-le pour ajouter les séances.","Calendar file saved: open it to add the sessions.")); }catch(e){ toast(t("Export impossible.","Export failed.")); } return; }
+  const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([text],{type:"text/calendar"})); a.download=filename; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1500);
+  toast(t(`${ps.length} séance(s) exportée(s) avec rappel ${lead} min avant.`,`${ps.length} session(s) exported with a reminder ${lead} min before.`));
+}
+
 /* ============ pop-up de soutien Ko-fi ============ */
 const KOFI="https://ko-fi.com/forma_training", KK="forma-kofi";
 function kofiState(){ try{ return JSON.parse(localStorage.getItem(KK)||"{}"); }catch(e){ return {}; } }
@@ -1142,11 +1459,13 @@ function render(){
   const v=$("#view");
   Object.values(charts).forEach(c=>c.destroy()); for(const k in charts) delete charts[k];
   const kept={}; v.querySelectorAll("[data-keep]").forEach(i=>{ if(i.value) kept[i.id]=i.value; });
-  v.innerHTML = ({dash:viewDash,plan:viewPlan,acts:viewActs,evo:viewEvo,set:viewSet})[S.tab]();
+  v.innerHTML = ({dash:viewDash,plan:viewPlan,acts:viewActs,coach:viewCoach,evo:viewEvo,set:viewSet})[S.tab]();
   if(S.tab==="dash") drawFormChart("c-form",56);
   if(S.tab==="evo"){ drawVolume(); drawFormChart("c-form2",120); drawTrend(); }
   if(S.tab==="acts") bindDrop();
   for(const id in kept){ const i=document.getElementById(id); if(i) i.value=kept[id]; }
+  if(S.tab==="coach"){ const c=$("#chat"); if(c) c.scrollTop=c.scrollHeight; }
+  scheduleNotifsSoon();
 }
 function accountBlock(){
   if(!S.fb||S.fb.state==="noconfig") return `<p class="muted" style="margin:0">${t("Synchronisation pas encore configurée. Colle la configuration de ton projet Firebase pour l'activer.","Sync isn't set up yet. Paste your Firebase project configuration to turn it on.")}</p><div class="row"><button class="btn small" id="fb-setup">${t("Configurer la synchronisation","Set up sync")}</button></div>`;
@@ -1180,9 +1499,10 @@ function viewDash(){
     <div class="kpi"><span class="label">${t("Charge 7 j / 28 j","Load 7 d / 28 d")}</span><span class="v">${m.acwr!=null?m.acwr.toFixed(2).replace(".",DEC()):"—"}</span><span class="pill ${ac}">${al}</span></div>
     <div class="kpi"><span class="label">${t("Fraîcheur (TSB)","Freshness (TSB)")}</span><span class="v">${m.tsb>0?"+":""}${Math.round(m.tsb)}</span><span class="pill ${tc}">${tl}</span></div>
   </div>
+  ${bilanHtml(acts,plans)}
   <div class="grid g2">
     <section class="card stack" aria-labelledby="h-adv">
-      <div class="row between"><h2 id="h-adv">${t("Conseils du jour","Today's advice")}</h2>${S.sample?`<button class="btn small ghost" id="ai-btn" ${S.aiBusy?"disabled":""}>${S.aiBusy?t("Analyse…","Analyzing…"):t("Analyse du coach IA","AI coach analysis")}</button>`:""}</div>
+      <div class="row between"><h2 id="h-adv">${t("Conseils du jour","Today's advice")}</h2><button class="btn small ghost" id="ai-btn">${t("Demander au coach","Ask the coach")}</button></div>
       <div class="ai-out" id="ai-out">${esc(S.aiText)}</div>
       <div class="advice">${adv.map(a=>`<div class="adv ${a.lvl}"><b></b><div><h4>${esc(a.t)}</h4><p>${esc(a.b)}</p></div></div>`).join("")}</div>
     </section>
@@ -1202,6 +1522,18 @@ function viewDash(){
     <div class="list">${recent.map(a=>actRow(a)).join("")||`<div class="empty">${t("Aucune activité.","No activities.")}</div>`}</div></section>
   </div>`;
 }
+function bilanHtml(acts,plans){
+  const W=analyzeWeek(acts,plans), A=analyzeLast(acts,plans);
+  const ul=xs=>xs.length?`<ul class="bullets">${xs.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:"";
+  return `<div class="grid g2">
+    <section class="card stack"><div class="row between"><h2>${t("Ta semaine","Your week")}</h2><span class="pill ${W.st.lvl}">${W.st.l}</span></div>
+      <p class="lead">${esc(W.verdict)}</p>${ul(W.lines)}</section>
+    <section class="card stack"><div class="row between"><h2>${t("Dernière séance","Last session")}</h2>${A?`<span class="pill ${A.lvl}">${A.tag}</span>`:""}</div>
+      ${A?`<div class="lasthead"><span class="sw" style="background:${sc(A.a.sport)}"></span><b>${esc(A.a.title)}</b><span class="muted">${dayName(A.a.date.slice(0,10))}</span></div>
+      <div class="facts">${A.facts.map(f=>`<span>${esc(f)}</span>`).join("")}</div>
+      <p class="lead">${esc(A.verdict)}</p>${ul(A.lines)}${A.next?`<p class="hint" style="margin:0">→ ${esc(A.next)}</p>`:""}`:`<div class="empty">${t("Aucune séance pour l'instant.","No sessions yet.")}</div>`}</section>
+  </div>`;
+}
 function planStatus(p,acts){
   const tk=dayKey(today0());
   const done=acts.some(a=>a.date.slice(0,10)===p.date&&a.sport===p.sport);
@@ -1209,7 +1541,7 @@ function planStatus(p,acts){
 }
 function planItem(p){
   const [c,l]=planStatus(p,ACTS()); const d=parseDay(p.date);
-  return `<button class="item" style="--c:${sc(p.sport)}" data-edit-plan="${p.id}"><span class="it">${esc(p.title)}</span><span class="im"><span>${DAYS()[(d.getDay()+6)%7]} ${d.getDate()}</span><span>${p.dur} min</span><span>${INT()[p.int]||""}</span><span class="pill ${c}">${l}</span></span></button>`;
+  return `<button class="item" style="--c:${sc(p.sport)}" data-edit-plan="${p.id}"><span class="it">${esc(p.title)}</span><span class="im"><span>${DAYS()[(d.getDay()+6)%7]} ${d.getDate()}${p.time?` · ${p.time}`:""}</span><span>${p.dur} min</span><span>${INT()[p.int]||""}</span><span class="pill ${c}">${l}</span></span></button>`;
 }
 function viewPlan(){
   const acts=ACTS(), plans=PLANS(); const mon=addDays(startOfWeek(today0()),S.weekOff*7); const tk=dayKey(today0());
@@ -1230,7 +1562,7 @@ function viewPlan(){
   return `<div class="stack">
     <div class="row between">
       <div class="weeknav"><button class="btn small ghost" data-week="-1" aria-label="${t("Semaine précédente","Previous week")}">←</button><div><h2>${label}</h2><div class="muted" style="font-size:13px">${fmtDate(mon)} – ${fmtDate(addDays(mon,6))} · ${t("prévu","planned")} ${String(Math.round(totPlan/60*10)/10).replace(".",DEC())} h · ${t("réalisé","done")} ${fmtH(totDone*60)} h</div></div><button class="btn small ghost" data-week="1" aria-label="${t("Semaine suivante","Next week")}">→</button></div>
-      <div class="row"><button class="btn small ghost" id="clear-week">${t("Vider la semaine","Clear week")}</button><button class="btn small" id="gen-week">${t("Proposer ma semaine","Suggest my week")}</button></div>
+      <div class="row"><button class="btn small ghost" id="ics-week">📅 ${t("Ajouter au calendrier","Add to calendar")}</button><button class="btn small ghost" id="clear-week">${t("Vider la semaine","Clear week")}</button><button class="btn small" id="gen-week">${t("Proposer ma semaine","Suggest my week")}</button></div>
     </div>
     <p class="hint" style="margin:0">${t(`« Proposer ma semaine » répartit tes sports selon tes 4 dernières semaines, avec un jour de repos (${DAYS_L()[S.set.restDay??0]}), une séance intense par sport d'endurance et la sortie longue le week-end. La charge baisse automatiquement si tu es fatigué.`,`“Suggest my week” spreads your sports based on your last 4 weeks, with a rest day (${DAYS_L()[S.set.restDay??0]}), one hard session per endurance sport and the long session at the weekend. Load drops automatically when you're fatigued.`)}</p>
     <div class="days">${cols}</div>
@@ -1299,6 +1631,27 @@ function viewSet(){
       <div class="f"><label for="s-rest">${t("Jour de repos","Rest day")}</label><select id="s-rest">${DAYS_L().map((d,i)=>`<option value="${i}" ${i===(+s.restDay||0)?"selected":""}>${d}</option>`).join("")}</select></div>
       <div class="f full"><label for="s-goal">${t("Objectif principal (pour le coach IA)","Main goal (for the AI coach)")}</label><input id="s-goal" type="text" placeholder="${t("ex. Triathlon distance olympique en juin, 10 km sous 45 min","e.g. Olympic-distance triathlon in June, 10K under 45 min")}" value="${esc(s.goal)}"></div>
     </div></section>
+  <section class="card stack"><h2>${t("Rappels & calendrier","Reminders & calendar")}</h2>
+    ${notifSupported()?`<label class="check"><input type="checkbox" id="notif-on" ${S.set.notifOn&&Notification.permission==="granted"?"checked":""}> ${t("Me rappeler mes séances planifiées","Remind me of my planned sessions")}</label>
+    <div class="fields"><div class="f"><label for="notif-lead">${t("Rappel","Reminder")}</label><select id="notif-lead">${[15,30,60,120].map(v=>`<option value="${v}" ${(+S.set.notifLead||30)===v?"selected":""}>${v<60?`${v} min`:`${v/60} h`} ${t("avant","before")}</option>`).join("")}</select></div>
+    <div class="f"><label for="s-deftime">${t("Heure habituelle","Usual time")}</label><input id="s-deftime" type="time" value="${S.set.defTime||"18:00"}"></div></div>
+    <label class="check"><input type="checkbox" id="notif-analysis" ${S.set.notifAnalysis!==false?"checked":""}> ${t("M'envoyer l'analyse de chaque nouvelle séance Strava","Send me the analysis of each new Strava session")}</label>
+    ${"Notification" in window&&Notification.permission==="denied"?`<p class="hint" style="margin:0;color:var(--bad)">${t("Les notifications sont bloquées pour ce site : autorise-les dans les réglages du navigateur.","Notifications are blocked for this site: allow them in your browser settings.")}</p>`:""}
+    <p class="hint" style="margin:0">${t("Les rappels s'affichent quand l'app est ouverte ou encore active en arrière-plan. Pour des rappels garantis, ajoute aussi ta semaine à ton calendrier.","Reminders show while the app is open or still active in the background. For guaranteed reminders, also add your week to your calendar.")}</p>`
+    :`<p class="muted" style="margin:0">${t("Les notifications fonctionnent dans l'app installée. Ici, ajoute ta semaine à ton calendrier : ton téléphone te rappellera chaque séance.","Notifications work in the installed app. Here, add your week to your calendar: your phone will remind you of each session.")}</p>
+    <div class="fields"><div class="f"><label for="notif-lead">${t("Rappel","Reminder")}</label><select id="notif-lead">${[15,30,60,120].map(v=>`<option value="${v}" ${(+S.set.notifLead||30)===v?"selected":""}>${v<60?`${v} min`:`${v/60} h`} ${t("avant","before")}</option>`).join("")}</select></div>
+    <div class="f"><label for="s-deftime">${t("Heure habituelle","Usual time")}</label><input id="s-deftime" type="time" value="${S.set.defTime||"18:00"}"></div></div>`}
+    <div class="row"><button class="btn small ghost" id="ics-week">📅 ${t("Ajouter cette semaine au calendrier","Add this week to my calendar")}</button></div>
+  </section>
+  <section class="card stack"><h2>Coach</h2>
+    <div class="fields"><div class="f full"><label for="coach-engine">${t("Moteur du coach","Coach engine")}</label><select id="coach-engine">
+      <option value="auto" ${S.set.coachEngine!=="local"?"selected":""}>${t("Claude si disponible, sinon coach gratuit","Claude when available, otherwise free coach")}</option>
+      <option value="local" ${S.set.coachEngine==="local"?"selected":""}>${t("Toujours le coach gratuit (sans IA externe)","Always the free coach (no external AI)")}</option></select></div></div>
+    ${window.__STANDALONE?`<p class="muted" style="margin:0">${t("Pour discuter librement avec Claude ici, ajoute une clé API Anthropic. C'est payant à l'usage : quelques centimes par conversation. La clé reste sur ton compte, visible par toi seul.","To chat freely with Claude here, add an Anthropic API key. It's pay-as-you-go: a few cents per conversation. The key stays in your account, visible only to you.")}</p>
+    <div class="fields"><div class="f full"><label for="coach-key">${t("Clé API Anthropic","Anthropic API key")}</label><input id="coach-key" type="password" autocomplete="off" placeholder="${coachKey()?"••••••••  "+t("(enregistrée)","(saved)"):"sk-ant-…"}"></div></div>
+    <div class="row"><a class="btn small ghost" href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">${t("Créer une clé","Create a key")} ↗</a><button class="btn small" id="coach-key-save">${t("Enregistrer la clé","Save key")}</button>${coachKey()?`<button class="btn small ghost" id="coach-key-del">${t("Supprimer la clé","Remove key")}</button>`:""}</div>`
+    :`<p class="muted" style="margin:0">${S.sample?t("Dans cette version, le coach utilise ton compte Claude, sans frais supplémentaires.","In this version the coach uses your Claude account, at no extra cost."):t("Claude n'est pas disponible dans cette vue : le coach gratuit répond à partir de tes données.","Claude isn't available in this view: the free coach answers from your data.")}</p>`}
+  </section>
   <section class="card stack"><h2>Application</h2>
     ${window.__STANDALONE ? accountBlock() : `<p class="muted" style="margin:0">${t("« Télécharger l'app » crée un dossier prêt pour Netlify, comme tes autres apps : connexion Google via ton projet Firebase, synchro Strava automatique, installable sur Android. Le fichier LISEZMOI.txt détaille la mise en ligne. Tes séances actuelles sont incluses.","“Download app” creates a Netlify-ready folder: Google sign-in through your Firebase project, automatic Strava sync, installable on Android. LISEZMOI.txt explains how to put it online. Your current sessions are included.")}</p>`}
     ${S.dl?`<div class="row"><button class="btn small" id="dl-app-2">${t("Télécharger l'app","Download app")}</button></div>`:""}
@@ -1406,6 +1759,7 @@ function openPlan(p,dateK){
     <div class="f full"><label for="p-title">${t("Séance","Session")}</label><input id="p-title" value="${esc(p.title)}" placeholder="${t("ex. 6 × 1000 m récup 2 min","e.g. 6 × 1000 m, 2 min recovery")}"></div>
     <div class="f"><label for="p-sport">Sport</label><select id="p-sport">${sportOpts(p.sport)}</select></div>
     <div class="f"><label for="p-date">Date</label><input id="p-date" type="date" value="${p.date}" required></div>
+    <div class="f"><label for="p-time">${t("Heure","Time")}</label><input id="p-time" type="time" value="${p.time||S.set.defTime||"18:00"}"></div>
     <div class="f"><label for="p-dur">${t("Durée prévue (min)","Planned duration (min)")}</label><input id="p-dur" type="number" inputmode="numeric" min="5" value="${p.dur}"></div>
     <div class="f"><label for="p-int">${t("Intensité","Intensity")}</label><select id="p-int">${Object.entries(INT()).map(([k,l])=>`<option value="${k}" ${k===p.int?"selected":""}>${l}</option>`).join("")}</select></div>
     <div class="f full"><label for="p-notes">Notes</label><textarea id="p-notes">${esc(p.notes||"")}</textarea></div>
@@ -1415,7 +1769,7 @@ function openPlan(p,dateK){
   </form>`);
   $("#plan-form").addEventListener("submit",async e=>{
     e.preventDefault(); const sp=$("#p-sport").value;
-    const obj={...p,id:(p.id&&!String(p.id).startsWith("dp"))?p.id:"p"+uid(),title:$("#p-title").value.trim()||SPORTS[sp].l,sport:sp,date:$("#p-date").value,dur:parseInt($("#p-dur").value)||45,int:$("#p-int").value,notes:$("#p-notes").value.trim(),gen:false};
+    const obj={...p,id:(p.id&&!String(p.id).startsWith("dp"))?p.id:"p"+uid(),title:$("#p-title").value.trim()||SPORTS[sp].l,sport:sp,date:$("#p-date").value,time:$("#p-time").value||"",dur:parseInt($("#p-dur").value)||45,int:$("#p-int").value,notes:$("#p-notes").value.trim(),gen:false};
     try{ await putPlan(obj); closeSheet(); toast(t("Séance planifiée.","Session planned.")); }catch(err){ toast(t("Enregistrement impossible : réessaie.","Couldn't save: try again.")); }
   });
 }
@@ -1463,12 +1817,19 @@ document.addEventListener("click",async e=>{
   if(el.dataset.editAct){ openAct(S.acts.find(a=>a.id===el.dataset.editAct)); return; }
   if(el.dataset.editPlan){ const p=PLANS().find(x=>x.id===el.dataset.editPlan); if(p) openPlan(p); return; }
   if(el.dataset.addPlan){ openPlan(null,el.dataset.addPlan); return; }
+  if(el.dataset.ask){ askCoach(el.dataset.ask); return; }
   if(el.id==="kofi-go"){ kofiSave({clicked:Date.now()}); setTimeout(closeSheet,300); return; }
   if(el.dataset.copy!==undefined){ const v=el.dataset.copy; try{ await navigator.clipboard.writeText(v); toast(t("Copié : ","Copied: ")+(el.dataset.label||(v.length>48?v.slice(0,45)+"…":v))); }catch(err){ const span=el.previousElementSibling; if(span){ const r=document.createRange(); r.selectNodeContents(span); const sel=getSelection(); sel.removeAllRanges(); sel.addRange(r); } toast(t("Sélectionné : copie-le avec ton clavier.","Selected: copy it with your keyboard.")); } return; }
   switch(el.id){
     case "pick": $("#file-in").click(); break;
     case "add-act": openAct(null); break;
-    case "ai-btn": runAI(); break;
+    case "ai-btn": askCoach(t("Analyse ma semaine et ma dernière séance, et dis-moi quoi faire ces prochains jours.","Review my week and my last session, and tell me what to do over the next few days.")); break;
+    case "chat-send": { const ta=$("#chat-in"); const v=ta?ta.value:""; if(ta) ta.value=""; askCoach(v); break; }
+    case "chat-clear": S.chat=[]; saveChat(); render(); break;
+    case "ics-week": exportWeekIcs(); break;
+    case "coach-key-save": { const k=($("#coach-key")?.value||"").trim(); if(!/^sk-ant-/.test(k)){ toast(t("Colle une clé qui commence par sk-ant-.","Paste a key starting with sk-ant-.")); break; }
+      try{ if(refs&&refs.coach){ await refs.coach.set({apiKey:k}); } else localStorage.setItem("forma-anthropic-key",k); S.coachKey=k; toast(t("Clé enregistrée : le coach utilise maintenant Claude.","Key saved: the coach now uses Claude.")); render(); }catch(e){ toast(t("Enregistrement impossible.","Couldn't save.")); } break; }
+    case "coach-key-del": try{ if(refs&&refs.coach) await refs.coach.delete(); localStorage.removeItem("forma-anthropic-key"); }catch(e){} S.coachKey=null; toast(t("Clé supprimée.","Key removed.")); render(); break;
     case "strava-sync": if(S.stravaMode==="api" && (!S.stravaTok || el.dataset.reconnect)) stravaAuthorize(); else syncStrava(); break;
     case "lang-btn": setLang(LANG==="en"?"fr":"en"); break;
     case "fb-setup": openFbSetup(); break;
@@ -1516,12 +1877,19 @@ document.addEventListener("change",e=>{
   if(id==="evo-sport"){ S.evoSport=v; render(); return; }
   if(id==="evo-metric"){ S.evoMetric=v; render(); return; }
   if(id==="s-lang"){ setLang(v); return; }
+  if(id==="notif-on"){ setNotif(e.target.checked); return; }
+  if(id==="notif-analysis"){ S.set.notifAnalysis=e.target.checked; saveSettings(); return; }
+  if(id==="notif-lead"){ S.set.notifLead=+v; saveSettings(); scheduleNotifs(); toast(t("Rappel mis à jour.","Reminder updated.")); return; }
+  if(id==="s-deftime"){ S.set.defTime=v; saveSettings(); scheduleNotifs(); return; }
+  if(id==="coach-engine"){ S.set.coachEngine=v; saveSettings(); toast(t("Moteur du coach mis à jour.","Coach engine updated.")); return; }
+  if(id==="chat-in") return;
   if(id==="kofi-never"){ setKofiOff(e.target.checked); toast(e.target.checked?t("Message désactivé.","Message turned off."):t("Message réactivé.","Message turned back on.")); return; }
   if(id==="kofi-reminder"){ setKofiOff(!e.target.checked); toast(e.target.checked?t("Rappel activé.","Reminder on."):t("Rappel désactivé.","Reminder off.")); return; }
   const map={"s-hrmax":"hrMax","s-hrrest":"hrRest","s-goalh":"goalH","s-rest":"restDay","s-goal":"goal"};
   if(map[id]){ S.set[map[id]] = id==="s-goal" ? v.trim() : (parseFloat(v)||0); saveSettings(); toast(t("Réglages enregistrés.","Settings saved.")); }
 });
-document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeSheet(); });
+document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeSheet();
+  if(e.key==="Enter"&&!e.shiftKey&&e.target&&e.target.id==="chat-in"){ e.preventDefault(); const v=e.target.value; e.target.value=""; askCoach(v); } });
 function bindDrop(){
   const d=$("#drop"); if(!d) return;
   ["dragenter","dragover"].forEach(ev=>d.addEventListener(ev,e=>{e.preventDefault();d.classList.add("over");}));
