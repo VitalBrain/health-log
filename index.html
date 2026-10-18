@@ -177,6 +177,9 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
 .msg.note{font-size:13px;color:var(--warn);background:transparent;border-style:dashed}
 .chat-in{display:flex;gap:8px;align-items:flex-end}
 .chat-in textarea{flex:1;min-width:0;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:9px 11px;resize:vertical;min-height:44px;font:inherit;color:inherit}
+.tgs{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+.tg{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+.tg input{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:7px 9px;width:100%;color:var(--ink)}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--btn);color:var(--btn-ink);padding:10px 16px;border-radius:10px;font-size:14px;z-index:60;max-width:calc(100% - 32px)}
 .empty{padding:18px;text-align:center;color:var(--muted);font-size:14px}
@@ -607,15 +610,18 @@ function advice(acts,plans){
 function suggestWeek(monday,acts){
   const td=today0(); const m=metrics(acts);
   const from=addDays(td,-27); const rec=acts.filter(a=>parseDay(a.date)>=from);
-  const per={}; for(const a of rec){ per[a.sport]=(per[a.sport]||0)+a.dur/60/4; }
+  const per={}, cnt={}; for(const a of rec){ per[a.sport]=(per[a.sport]||0)+a.dur/60/4; cnt[a.sport]=(cnt[a.sport]||0)+1; }
+  const tgs=S.set.targets||{};
   let total=Object.values(per).reduce((s,x)=>s+x,0);
   let factor=1.07, note=t("progression +7 %","+7% progression");
   if(m.acwr>1.3||m.tsb<-20){ factor=.8; note=t("semaine allégée (fatigue)","lighter week (fatigue)"); }
   if(!total){ total=(S.set.goalH||5)*60; per.course=total*.4; per.renfo=total*.25; per.natation=total*.2; per.velo=total*.15; factor=1; note=t("répartition de départ","starting split"); }
   const sessions=[];
   for(const sp of SK){
-    const mins=(per[sp]||0)*factor; if(mins<20) continue;
-    let n=Math.max(1,Math.round(mins/SPORTS[sp].len)); n=Math.min(n,4);
+    const tg=tgs[sp]; let mins=(per[sp]||0)*factor, n;
+    if(tg===0) continue;
+    if(tg>0){ n=Math.min(tg,7); const avg=cnt[sp]?(per[sp]*4/cnt[sp]):SPORTS[sp].len; mins=Math.max(mins,n*Math.max(30,avg)*(factor<1?0.8:1)); }
+    else { if(mins<20) continue; n=Math.min(4,Math.max(1,Math.round(mins/SPORTS[sp].len))); }
     const each=Math.round(mins/n/5)*5;
     for(let i=0;i<n;i++){
       let int="facile", title=SPORTS[sp].l+" — endurance", long=false;
@@ -1241,6 +1247,46 @@ function analyzeWeek(acts,plans){
   return {st,m,lines,verdict,cur,remaining,missed,hardN,h};
 }
 
+async function genWeek(off){
+  const mon=addDays(startOfWeek(today0()),off*7); const keys=[0,1,2,3,4,5,6].map(i=>dayKey(addDays(mon,i)));
+  const gen=suggestWeek(mon,ACTS()).filter(p=>p.date>=dayKey(today0()));
+  if(!gen.length){ toast(t("Cette semaine est passée : avance d'une semaine pour planifier.","This week is over: move ahead a week to plan.")); return 0; }
+  for(const p of S.plans.filter(p=>p.gen&&keys.includes(p.date)&&p.date>=dayKey(today0()))) await delPlan(p.id);
+  for(const p of gen) await putPlan({...p,id:"p"+uid()});
+  toast(t(`${gen.length} séances proposées. Touche une séance pour l'ajuster.`,`${gen.length} sessions suggested. Tap a session to adjust it.`));
+  return gen.length;
+}
+const SPORT_WORDS={velo:["velo","cycling","cyclisme","bike","biking","vtt","ride","gravel"],course:["course a pied","running","run ","runs","footing","jogging","courir","course"],natation:["natation","swim","nage","nager","piscine"],renfo:["renfo","strength","muscu","musculation","calisthen","gainage","force"],basket:["basket"]};
+function currentPerWeek(sp){ const td=today0(); const n=ACTS().filter(a=>a.sport===sp&&parseDay(a.date)>=addDays(td,-27)).length; return Math.round(n/4); }
+function parseTargetRequest(q){
+  const x=" "+norm(q).replace(/[?!.,;:]/g," ")+" ";
+  const sports=Object.keys(SPORT_WORDS).filter(k=>SPORT_WORDS[k].some(w=>x.includes(w)));
+  if(!sports.length) return null;
+  const none=/ sans | without | remove | enleve | retire | supprime | no more | stop /.test(x);
+  const more=/ more | davantage | ajoute | ajouter | add | include | inclure | inclus | increase | augmente | plus de /.test(x);
+  const less=/ moins | less | fewer | reduce | reduis | diminue /.test(x);
+  const W={un:1,une:1,one:1,deux:2,two:2,trois:3,three:3,quatre:4,four:4,cinq:5,five:5,six:6};
+  let n=null; const m=x.match(/(\d+)\s*(?:x|fois|seances?|sessions?|times|sorties?|entrainements?|workouts?)\s/);
+  if(m&&+m[1]<=7) n=+m[1];
+  if(n==null){ const w=x.match(/ (un|une|one|deux|two|trois|three|quatre|four|cinq|five|six) (?:seances?|sessions?|sorties?|fois|times|workouts?|entrainements?) /); if(w) n=W[w[1]]; }
+  const weekly=/semaine|week|hebdo|plan|planning|programme|schedule/.test(x);
+  if(n==null&&!more&&!less&&!none) return null;
+  if(n!=null&&!weekly&&!more) return null;
+  if(n==null&&!weekly&&!none) return null;
+  const out={};
+  for(const sp of sports){ const cur=(S.set.targets||{})[sp]??currentPerWeek(sp);
+    out[sp]= n!=null&&!more ? n : n!=null&&more ? Math.min(7,cur+n) : none ? 0 : more ? Math.min(7,cur+1) : Math.max(0,cur-1); }
+  return out;
+}
+function applyTargets(tg){
+  const before={...(S.set.targets||{})}; S.set.targets={...before,...tg}; saveSettings();
+  const parts=Object.entries(tg).map(([k,v])=>{ const was=before[k]??currentPerWeek(k); return v===0?t(`${SPORTS[k].l.toLowerCase()} retiré`,`${SPORTS[k].l.toLowerCase()} removed`):t(`${SPORTS[k].l.toLowerCase()} : ${v} séance${v>1?"s":""} par semaine (avant ~${was})`,`${SPORTS[k].l.toLowerCase()}: ${v} session${v>1?"s":""} per week (was ~${was})`); });
+  const W=analyzeWeek(ACTS(),PLANS());
+  let txt=t("C'est noté : ","Got it: ")+parts.join(", ")+". "+t("Ce réglage est enregistré dans Réglages → Objectifs et s'applique à chaque « Proposer ma semaine ».","This is saved in Settings → Goals and applies every time you use “Suggest my week”.");
+  if(W.st.k==="over"||W.st.k==="build") txt+=" "+t("Vu ta charge actuelle, la durée totale reste ajustée à la baisse : les séances ajoutées seront faciles.","Given your current load, total duration stays reduced: added sessions will be easy.");
+  return txt;
+}
+
 /* ============ coach (bot) ============ */
 const CHAT_K="forma-chat";
 S.chat=(()=>{ try{ return JSON.parse(localStorage.getItem(CHAT_K)||"[]"); }catch(e){ return []; } })();
@@ -1264,6 +1310,7 @@ Règles : réponds en ${LANG==="en"?"anglais":"français"}${LANG==="en"?"":", en
 
 Date du jour : ${dayKey(td)} (${DAYS_L()[(td.getDay()+6)%7]}).
 Profil : FC max ${S.set.hrMax}, FC repos ${S.set.hrRest}, objectif ${S.set.goalH} h/semaine, jour de repos ${DAYS_L()[S.set.restDay??0]}, objectif principal : ${S.set.goal||"non précisé"}.
+Séances par semaine souhaitées : ${Object.entries(S.set.targets||{}).map(([k,v])=>`${SPORTS[k].l} ${v}`).join(", ")||"automatique"}.
 Indicateurs : forme CTL ${m.ctl.toFixed(0)}, fatigue ATL ${m.atl.toFixed(0)}, fraîcheur TSB ${m.tsb.toFixed(0)}, ratio aigu/chronique ${m.acwr!=null?m.acwr.toFixed(2):"n/d"}, état « ${W.st.l} », historique ${m.histDays} jours.
 Bilan de la semaine (calculé par l'app) : ${W.verdict} ${W.lines.join(" ")}
 Dernière séance (calculée par l'app) : ${A?`${A.a.date.slice(0,10)} ${SPORTS[A.a.sport].l} « ${A.a.title} ». ${A.verdict} ${A.lines.join(" ")} ${A.next}`:"aucune"}
@@ -1318,6 +1365,8 @@ function chatTurns(){
 async function askCoach(q){
   q=String(q||"").trim(); if(!q||S.chatBusy) return;
   S.chat.push({role:"user",text:q}); S.chatBusy=true; S.tab="coach"; saveChat(); render();
+  const tg=parseTargetRequest(q);
+  if(tg){ S.chat.push({role:"bot",text:applyTargets(tg),action:"coach-gen"}); S.chatBusy=false; saveChat(); render(); return; }
   const eng=coachEngine(); let reply="", engUsed=eng, note="";
   const live={role:"bot",text:"…",live:true}; S.chat.push(live); render();
   try{
@@ -1328,18 +1377,21 @@ async function askCoach(q){
       reply=r.text;
     } else {
       const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"x-api-key":coachKey(),"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
-        body:JSON.stringify({model:"claude-haiku-5-5",max_tokens:900,system:coachSystem(),messages:chatTurns()})});
+        body:JSON.stringify({model:"claude-haiku-5-5",max_tokens:2000,thinking:{type:"disabled"},system:coachSystem(),messages:chatTurns()})});
       const d=await r.json().catch(()=>({}));
       if(!r.ok){ const msg=d?.error?.message||""; throw {code:r.status===401?"bad_key":/credit|billing/i.test(msg)?"credit":r.status===429||r.status===529?"busy":"api",message:msg}; }
       reply=(d.content||[]).filter(c=>c.type==="text").map(c=>c.text).join("").trim();
+      if(!reply) throw {code:"empty",message:d.stop_reason||""};
     }
+    if(!reply) throw {code:"empty"};
   }catch(e){
     engUsed="local"; reply=localReply(q);
     note = e?.code==="bad_key"?t("Clé API refusée : vérifie-la dans Réglages → Coach.","API key rejected: check it in Settings → Coach.")
       : e?.code==="credit"?t("Ton compte API Anthropic n'a plus de crédit.","Your Anthropic API account is out of credit.")
       : e?.code==="busy"||e?.code==="rate_limited"?t("Claude est très sollicité en ce moment.","Claude is busy right now.")
       : e?.code==="not_granted"?t("Claude n'a pas été autorisé pour cette page.","Claude wasn't allowed for this page.")
-      : t("Claude n'a pas répondu.","Claude didn't respond.");
+      : e?.code==="empty"?t("Claude a renvoyé une réponse vide","Claude returned an empty answer")+(e.message?` (${e.message}).`:".")
+      : t("Claude n'a pas répondu","Claude didn't respond")+(e?.message?` (${String(e.message).slice(0,120)}).`:".");
     note+=" "+t("Réponse du coach gratuit :","Free coach answer:");
     if(e?.code==="not_granted") S.sample=null;
   }
@@ -1351,8 +1403,9 @@ async function askCoach(q){
 function fmtMsg(s){ return esc(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>"); }
 function viewCoach(){
   const eng=coachEngine();
-  const chips=[t("Analyse ma semaine","Review my week"),t("Analyse ma dernière séance","Analyze my last session"),t("Que faire demain ?","What should I do tomorrow?"),t("Suis-je fatigué ?","Am I tired?"),t("Est-ce que je progresse ?","Am I improving?")];
-  const msgs=S.chat.length?S.chat.map(m=>`<div class="msg ${m.role==="user"?"user":"bot"}${m.err?" note":""}"${m.live?' id="msg-live"':""}>${fmtMsg(m.text)}</div>`).join("")
+  const chips=[t("Analyse ma semaine","Review my week"),t("Analyse ma dernière séance","Analyze my last session"),t("Que faire demain ?","What should I do tomorrow?"),t("Suis-je fatigué ?","Am I tired?"),t("Est-ce que je progresse ?","Am I improving?"),t("Ajoute une séance de vélo par semaine","Add one cycling session per week")];
+  const last=S.chat.length-1;
+  const msgs=S.chat.length?S.chat.map((m,i)=>`<div class="msg ${m.role==="user"?"user":"bot"}${m.err?" note":""}"${m.live?' id="msg-live"':""}>${fmtMsg(m.text)}${m.action==="coach-gen"&&i===last?`<div class="row" style="margin-top:8px"><button class="btn small" id="coach-gen">${((today0().getDay()+6)%7)>=5?t("Générer la semaine prochaine","Generate next week"):t("Régénérer ma semaine","Regenerate my week")}</button></div>`:""}</div>`).join("")
     :`<div class="msg bot">${t("Salut ! Je connais ta semaine, ta dernière séance et ton planning. Pose-moi une question ou choisis une suggestion.","Hi! I know your week, your last session and your plan. Ask me a question or pick a suggestion.")}</div>`;
   return `<div class="stack">
   <section class="card stack coach">
@@ -1629,6 +1682,8 @@ function viewSet(){
     <div class="fields">
       <div class="f"><label for="s-goalh">${t("Heures par semaine","Hours per week")}</label><input id="s-goalh" type="number" step="0.5" min="0" max="40" value="${s.goalH}"></div>
       <div class="f"><label for="s-rest">${t("Jour de repos","Rest day")}</label><select id="s-rest">${DAYS_L().map((d,i)=>`<option value="${i}" ${i===(+s.restDay||0)?"selected":""}>${d}</option>`).join("")}</select></div>
+      <div class="f full"><label>${t("Séances par semaine et par sport (vide = automatique, 0 = jamais)","Sessions per week by sport (empty = automatic, 0 = never)")}</label>
+        <div class="tgs">${["course","velo","natation","renfo","basket"].map(k=>`<label class="tg"><span>${SPORTS[k].l}</span><input id="tg-${k}" type="number" min="0" max="7" inputmode="numeric" placeholder="auto" value="${(S.set.targets||{})[k]??""}"></label>`).join("")}</div></div>
       <div class="f full"><label for="s-goal">${t("Objectif principal (pour le coach IA)","Main goal (for the AI coach)")}</label><input id="s-goal" type="text" placeholder="${t("ex. Triathlon distance olympique en juin, 10 km sous 45 min","e.g. Olympic-distance triathlon in June, 10K under 45 min")}" value="${esc(s.goal)}"></div>
     </div></section>
   <section class="card stack"><h2>${t("Rappels & calendrier","Reminders & calendar")}</h2>
@@ -1853,14 +1908,8 @@ document.addEventListener("click",async e=>{
     case "install-app": if(S.installEvt){ S.installEvt.prompt(); S.installEvt=null; $("#install-app").hidden=true; } break;
     case "a-del": if(el.dataset.confirm){ await delAct(el.dataset.id); closeSheet(); toast(t("Activité supprimée.","Activity deleted.")); } else { el.dataset.confirm="1"; el.textContent=t("Confirmer la suppression","Confirm delete"); el.classList.add("danger"); } break;
     case "p-del": if(String(el.dataset.id).startsWith("dp")){ closeSheet(); toast(t("Séance d'exemple : génère ta propre semaine.","Sample session: generate your own week.")); break; } if(el.dataset.confirm){ await delPlan(el.dataset.id); closeSheet(); toast(t("Séance supprimée.","Session deleted.")); } else { el.dataset.confirm="1"; el.textContent=t("Confirmer la suppression","Confirm delete"); el.classList.add("danger"); } break;
-    case "gen-week": {
-      const mon=addDays(startOfWeek(today0()),S.weekOff*7); const keys=[0,1,2,3,4,5,6].map(i=>dayKey(addDays(mon,i)));
-      const gen=suggestWeek(mon,ACTS()).filter(p=>p.date>=dayKey(today0()));
-      if(!gen.length){ toast(t("Cette semaine est passée : avance d'une semaine pour planifier.","This week is over: move ahead a week to plan.")); break; }
-      el.disabled=true;
-      for(const p of S.plans.filter(p=>p.gen&&keys.includes(p.date)&&p.date>=dayKey(today0()))) await delPlan(p.id);
-      for(const p of gen) await putPlan({...p,id:"p"+uid()});
-      toast(t(`${gen.length} séances proposées. Touche une séance pour l'ajuster.`,`${gen.length} sessions suggested. Tap a session to adjust it.`)); break; }
+    case "gen-week": el.disabled=true; await genWeek(S.weekOff); el.disabled=false; break;
+    case "coach-gen": { el.disabled=true; const off=((today0().getDay()+6)%7)>=5?1:0; const n=await genWeek(off); if(n){ S.weekOff=off; S.tab="plan"; render(); } else el.disabled=false; break; }
     case "clear-week": {
       const mon=addDays(startOfWeek(today0()),S.weekOff*7); const keys=[0,1,2,3,4,5,6].map(i=>dayKey(addDays(mon,i)));
       const ps=S.plans.filter(p=>keys.includes(p.date)); if(!ps.length){ toast(t("Aucune séance planifiée cette semaine.","No sessions planned this week.")); break; }
@@ -1881,6 +1930,7 @@ document.addEventListener("change",e=>{
   if(id==="notif-analysis"){ S.set.notifAnalysis=e.target.checked; saveSettings(); return; }
   if(id==="notif-lead"){ S.set.notifLead=+v; saveSettings(); scheduleNotifs(); toast(t("Rappel mis à jour.","Reminder updated.")); return; }
   if(id==="s-deftime"){ S.set.defTime=v; saveSettings(); scheduleNotifs(); return; }
+  if(id&&id.startsWith("tg-")){ const k=id.slice(3); const tg={...(S.set.targets||{})}; if(v==="") delete tg[k]; else tg[k]=Math.max(0,Math.min(7,parseInt(v)||0)); S.set.targets=tg; saveSettings(); toast(t("Répartition enregistrée : elle s'applique à « Proposer ma semaine ».","Split saved: it applies to “Suggest my week”.")); return; }
   if(id==="coach-engine"){ S.set.coachEngine=v; saveSettings(); toast(t("Moteur du coach mis à jour.","Coach engine updated.")); return; }
   if(id==="chat-in") return;
   if(id==="kofi-never"){ setKofiOff(e.target.checked); toast(e.target.checked?t("Message désactivé.","Message turned off."):t("Message réactivé.","Message turned back on.")); return; }
