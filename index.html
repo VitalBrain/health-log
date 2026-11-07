@@ -107,6 +107,8 @@ details ol{margin:8px 0 0;padding-left:20px;font-size:14px;color:var(--muted)}
 details li{margin-bottom:4px}
 
 /* planning */
+.zone{color:var(--ink);font-weight:600}
+.zones{display:grid;gap:4px}.zones .zr{display:grid;grid-template-columns:36px 1fr auto;gap:8px;font-size:14px;padding:4px 0;border-bottom:1px solid var(--line,#e3e6ea)}
 .weeknav{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}
 @media (max-width:860px){.days{grid-template-columns:1fr}}
@@ -1128,10 +1130,47 @@ function zoneOf(a){
   const x=hrrOf(a);
   const Z=[null,t("récupération","recovery"),t("endurance fondamentale","easy endurance"),t("tempo","tempo"),t("seuil","threshold"),t("très intense (VO2max)","very hard (VO2max)")];
   let z=null;
-  if(x!=null) z = x<0.6?1 : x<0.7?2 : x<0.8?3 : x<0.9?4 : 5;
+  if(a.hr&&S.set.hrMax) z = zoneOfHr(a.hr);
+  else if(x!=null) z = x<0.6?1 : x<0.7?2 : x<0.8?3 : x<0.9?4 : 5;
   else if(a.rpe) z = a.rpe<=3?1 : a.rpe<=5?2 : a.rpe<=6?3 : a.rpe<=8?4 : 5;
   return z ? {z,l:Z[z]} : null;
 }
+/* ============ zones cardio ============ */
+const ZPCT=[0,.68,.77,.85,.92];
+const ZNAME=()=>[null,t("récupération","recovery"),t("endurance fondamentale","easy endurance"),t("tempo","tempo"),t("seuil","threshold"),t("VMA","VO2max")];
+function hrMaxDetect(){
+  const lim=dayKey(addDays(today0(),-365));
+  const xs=S.acts.filter(a=>a.hrMax&&a.hrMax>=140&&a.hrMax<=215&&a.date.slice(0,10)>=lim).map(a=>a.hrMax).sort((a,b)=>b-a);
+  if(!xs.length) return null;
+  return {v:Math.round(xs.length>=5?xs[1]:xs[0]),n:xs.length};
+}
+function applyAutoHr(){
+  if(S.set.hrAuto===false||isDemo()) return;
+  const d=hrMaxDetect(); if(!d) return;
+  if(d.v!==S.set.hrMax){ S.set.hrMax=d.v; S.set.hrMaxN=d.n; saveSettings(); }
+}
+function ZONES(){ const m=S.set.hrMax||190; return [1,2,3,4,5].map(z=>({z,l:ZNAME()[z],lo:z===1?null:Math.round(m*ZPCT[z-1]),hi:z===5?m:Math.round(m*ZPCT[z])-1})); }
+function zoneOfHr(hr){ if(!hr||!S.set.hrMax) return null; const x=hr/S.set.hrMax; return x<ZPCT[1]?1:x<ZPCT[2]?2:x<ZPCT[3]?3:x<ZPCT[4]?4:5; }
+function zoneRange(a,b){ const Z=ZONES(); const lo=Z[a-1].lo, hi=Z[b-1].hi; return lo==null?`< ${hi+1} bpm`:`${lo}–${hi} bpm`; }
+function zoneTxt(code){
+  if(!code) return "";
+  if(code.includes("+")){ const [a,b]=code.split("+").map(Number); return t(`Z${a} (${zoneRange(a,a)}), blocs en Z${b} (${zoneRange(b,b)})`,`Z${a} (${zoneRange(a,a)}), blocks in Z${b} (${zoneRange(b,b)})`); }
+  const [a,b]=code.split("-").map(Number); return `Z${a}${b?"–"+b:""} · ${zoneRange(a,b||a)}`;
+}
+function planZone(p){
+  if(p.zone!==undefined) return p.zone;
+  const x=(p.title||"").toLowerCase();
+  if(p.sport==="renfo"||p.sport==="autre") return null;
+  if(p.sport==="natation") return p.int==="intense"?"3-4":"1-2";
+  if(p.sport==="velo") return p.int==="intense"?"4":p.int==="modere"?"3":"1-2";
+  if(p.sport==="basket") return null;
+  if(/test/.test(x)) return "4-5";
+  if(/seuil|tempo/.test(x)) return "4";
+  if(/vma|côte|cote|30\/30|\b(200|300|400|500|800|1000|1600) ?m\b/.test(x)) return "5";
+  if(/allure semi|dont|derniers|progressi/.test(x)) return "2+4";
+  return p.int==="intense"?"4-5":p.int==="modere"?"3":"2";
+}
+
 const speedOf = a => a.dist&&a.dur ? a.dist/(a.dur/3600) : null;
 function paceDelta(sport,sp,ref){
   if(sport==="course"){ const d=Math.round(3600/sp-3600/ref); if(Math.abs(d)<3) return t("allure identique à ta moyenne récente","same pace as your recent average"); return d<0?t(`${-d} s/km plus rapide que ta moyenne récente`,`${-d} s/km faster than your recent average`):t(`${d} s/km plus lent que ta moyenne récente`,`${d} s/km slower than your recent average`); }
@@ -1300,7 +1339,7 @@ Plan de 17 semaines à partir du lundi 9 nov. 2026 : Fondation (9 nov.–6 déc.
 
 Semaine type : lundi muscu A haut du corps + natation EF ; mardi SÉANCE CLÉ course ; mercredi footing EF + vélo endurance ; jeudi muscu B full body (jambes lourdes autorisées) + natation facile ; vendredi footing EF + 6 lignes droites de 20 s (récup 60–90 s de marche) ; samedi REPOS COMPLET ; dimanche SORTIE LONGUE.
 
-Allures : endurance facile 5:20–5:45/km sous 150 bpm, cadence 168–172 ; seuil 4:05–4:10/km (nov.–déc.) puis 3:48–3:52/km (févr.) ; allure semi 4:05 puis 3:47/km. Vélo uniquement en endurance (130–145 bpm), 3–4 h/semaine, jamais intense.
+Allures : endurance facile 5:20–5:45/km en Z2 (environ sous 150 bpm), cadence 168–172 ; seuil 4:05–4:10/km (nov.–déc.) puis 3:48–3:52/km (févr.) ; allure semi 4:05 puis 3:47/km. Vélo uniquement en endurance (130–145 bpm), 3–4 h/semaine, jamais intense.
 
 Règles : une seule séance dure de course par semaine (mardi) ; pas de muscu jambes lourde ni de vélo intense la veille du mardi ou du dimanche ; ne pas ajouter de petits runs bonus ; alléger si FC repos +5 bpm, jambes lourdes 2 jours de suite ou sommeil perturbé. Le test 10 km de janvier fixe l'objectif final (36:45 ou mieux : record jouable ; 37:00–37:45 : 1:21–1:22:30 ; 37:45–38:30 : 1:22:30–1:24).
 
@@ -1328,28 +1367,29 @@ const PROG_WEEKS=[
 const r5 = x => Math.max(15,Math.round(x/5)*5);
 function progBuild(){
   const out=[], mon0=parseDay(PROG_START);
-  const P=(d,sport,title,dur,int,notes)=>out.push({date:dayKey(d),time:S.set.defTime||"18:00",sport,title,dur:r5(dur),int,notes,prog:PROG_ID,gen:false});
+  const P=(d,sport,title,dur,int,notes,zone=null)=>out.push({date:dayKey(d),time:S.set.defTime||"18:00",sport,title,dur:r5(dur),int,notes,zone,prog:PROG_ID,gen:false});
+  const KZ={1:"5",2:"4",3:"5",4:"4",5:"4-5",6:"4",7:"5",8:"4",9:"4-5",10:"5",11:"4",12:"4-5",13:"4",14:"4",15:"4-5",16:"4",17:"4"};
   for(const [w,phase,vol,key,keyKm,lng,lngKm,wedKm,friKm] of PROG_WEEKS){
     const mon=addDays(mon0,(w-1)*7), d=i=>addDays(mon,i);
     const head=`Programme semi — semaine ${w}/17 (${phase}, ≈ ${vol} km de course).`;
     const bike=w<=10?90:w<=15?75:w===16?45:0;
     if(w<17){
       P(d(0),"renfo",w>=16?"Muscu A — légère (affûtage)":"Muscu A — haut du corps",w>=16?40:60,w>=16?"facile":"modere",`${head} Tractions, dips, développés, rowing + gainage. Jambes légères seulement : pas de squat ni de soulevé de terre lourd (séance clé demain).`);
-      P(d(0),"natation","Natation EF",35,"facile",`${head} Nage tranquille, technique.`);
-      P(d(1),"course",`Séance clé — ${key}`,keyKm*5.2,"intense",`${head} 15–20 min EF d'échauffement, puis ${key}, puis 10 min de retour au calme. ≈ ${keyKm} km au total.`);
-      P(d(2),"course",`Footing EF ${wedKm} km`,wedKm*5.6,"facile",`${head} 5:20–5:45/km, sous 150 bpm, cadence 168–172.`);
-      if(bike) P(d(2),"velo","Vélo endurance",bike,"facile",`${head} 130–145 bpm, pédalage souple, sans côtes appuyées.`);
+      P(d(0),"natation","Natation EF",35,"facile",`${head} Nage tranquille, technique.`,"1-2");
+      P(d(1),"course",`Séance clé — ${key}`,keyKm*5.2,"intense",`${head} 15–20 min EF d'échauffement, puis ${key}, puis 10 min de retour au calme. ≈ ${keyKm} km au total. Échauffement et récupérations en Z1–Z2.`,KZ[w]);
+      P(d(2),"course",`Footing EF ${wedKm} km`,wedKm*5.6,"facile",`${head} 5:20–5:45/km, cadence 168–172.`,"2");
+      if(bike) P(d(2),"velo","Vélo endurance",bike,"facile",`${head} Pédalage souple, sans côtes appuyées.`,"1-2");
       if(w<16){ P(d(3),"renfo","Muscu B — full body",60,"modere",`${head} Squat, soulevé de terre roumain, fentes, tirage, développé. Jambes lourdes autorisées.`);
-        P(d(3),"natation","Natation facile (optionnelle)",30,"facile",`${head} Récupération.`); }
-      P(d(4),"course",`Footing EF ${friKm} km + 6 lignes droites`,friKm*5.6+6,"facile",`${head} Lignes droites : 20 s rapides et relâchées, puis 60–90 s de marche.`);
-      P(d(6),"course",lng,lngKm*5.9,w===10?"intense":/dont|derniers/.test(lng)?"modere":"facile",`${head} ${w===10?"Le résultat fixe l'objectif final du semi.":"Au-delà de 1h15 : 1 gel toutes les 40–45 min + eau."}`);
+        P(d(3),"natation","Natation facile (optionnelle)",30,"facile",`${head} Récupération.`,"1-2"); }
+      P(d(4),"course",`Footing EF ${friKm} km + 6 lignes droites`,friKm*5.6+6,"facile",`${head} Lignes droites : 20 s rapides et relâchées, puis 60–90 s de marche.`,"2");
+      P(d(6),"course",lng,lngKm*5.9,w===10?"intense":/dont|derniers/.test(lng)?"modere":"facile",`${head} ${w===10?"Le résultat fixe l'objectif final du semi.":"Au-delà de 1h15 : 1 gel toutes les 40–45 min + eau."}`,w===10?"4-5":/dont|derniers/.test(lng)?"2+4":"2");
     } else {
-      P(d(0),"natation","Natation très facile",30,"facile",`${head} Semaine de course : on garde de la fraîcheur.`);
-      P(d(1),"course",`Rappel — ${key}`,keyKm*5.2,"modere",`${head} 15 min EF, ${key}, 10 min de retour au calme.`);
-      P(d(2),"course","Footing EF 6 km",6*5.6,"facile",`${head} Très tranquille.`);
-      P(d(3),"course","Footing 6 km + lignes droites",6*5.6+5,"facile",`${head} 4–6 lignes droites relâchées.`);
-      P(d(5),"course","Déblocage 4 km + 4 accélérations",25,"facile",`${head} Veille de course : court et facile. Récupère ton dossard avant.`);
-      P(d(6),"course",lng,85,"intense",`${head} Gels vers le km 8 et le km 15. Échauffement 10 min + 3 lignes droites.`);
+      P(d(0),"natation","Natation très facile",30,"facile",`${head} Semaine de course : on garde de la fraîcheur.`,"1-2");
+      P(d(1),"course",`Rappel — ${key}`,keyKm*5.2,"modere",`${head} 15 min EF, ${key}, 10 min de retour au calme.`,"2+4");
+      P(d(2),"course","Footing EF 6 km",6*5.6,"facile",`${head} Très tranquille.`,"2");
+      P(d(3),"course","Footing 6 km + lignes droites",6*5.6+5,"facile",`${head} 4–6 lignes droites relâchées.`,"2");
+      P(d(5),"course","Déblocage 4 km + 4 accélérations",25,"facile",`${head} Veille de course : court et facile. Récupère ton dossard avant.`,"1-2");
+      P(d(6),"course",lng,85,"intense",`${head} Gels vers le km 8 et le km 15. Échauffement 10 min + 3 lignes droites.`,"4");
     }
   }
   return out;
@@ -1405,12 +1445,13 @@ function engineLabel(e){ return e==="claude-sample"?t("Claude, via ton compte Cl
 function coachSystem(){
   const acts=ACTS(), plans=PLANS(), m=metrics(acts), W=analyzeWeek(acts,plans), A=analyzeLast(acts,plans), td=today0();
   const recent=[...acts].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,14).map(a=>`${a.date.slice(0,10)} ${SPORTS[a.sport].l} « ${a.title} » ${fmtDur(a.dur)}${a.dist?" "+fmtKm(a.dist)+" km":""}${paceStr(a.sport,a)?" "+paceStr(a.sport,a):""}${a.hr?" FC "+Math.round(a.hr):""}${a.rpe?" RPE "+a.rpe:""} charge ${Math.round(load(a))}`);
-  const up=plans.filter(p=>p.date>=dayKey(td)).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,10).map(p=>`${p.date}${p.time?" "+p.time:""} ${SPORTS[p.sport].l} « ${p.title} » ${p.dur} min ${INT()[p.int]||""}`);
+  const up=plans.filter(p=>p.date>=dayKey(td)).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,10).map(p=>`${p.date}${p.time?" "+p.time:""} ${SPORTS[p.sport].l} « ${p.title} » ${p.dur} min ${INT()[p.int]||""}${planZone(p)?" "+zoneTxt(planZone(p)):""}`);
   const vol=weeksBack(8).map(w=>{ const xs=acts.filter(a=>parseDay(a.date)>=w&&parseDay(a.date)<addDays(w,7)); return `S${isoWeek(w)}: ${(xs.reduce((s,a)=>s+a.dur,0)/3600).toFixed(1)} h, ${xs.length} séances`; });
   return `Tu es le coach de l'app Forma, entraîneur multisport expérimenté (course, vélo, natation, renforcement/calisthénie, basket).
 Règles : réponds en ${LANG==="en"?"anglais":"français"}${LANG==="en"?"":", en tutoyant"}, ton direct, concret et bienveillant. 150 mots maximum sauf si on te demande un plan détaillé. Pas de titres markdown ; listes avec « - » autorisées. Appuie-toi uniquement sur les données ci-dessous, cite des chiffres, n'invente rien, et dis quand une donnée manque. Reste cohérent avec le bilan calculé par l'app. En cas de douleur ou de symptôme, conseille de consulter un professionnel de santé.
 
 Date du jour : ${dayKey(td)} (${DAYS_L()[(td.getDay()+6)%7]}).
+Zones cardio (FC max ${S.set.hrMax}${S.set.hrAuto!==false?" détectée automatiquement":""}) : ${ZONES().map(z=>`Z${z.z} ${z.l} ${z.lo==null?"<"+(z.hi+1):z.lo+"–"+z.hi}`).join(", ")} bpm. Donne toujours la zone et la plage de FC cible quand tu proposes une séance.
 Profil : FC max ${S.set.hrMax}, FC repos ${S.set.hrRest}, objectif ${S.set.goalH} h/semaine, jour de repos ${DAYS_L()[S.set.restDay??0]}, objectif principal : ${S.set.goal||"non précisé"}.
 Séances par semaine souhaitées : ${Object.entries(S.set.targets||{}).map(([k,v])=>`${SPORTS[k].l} ${v}`).join(", ")||"automatique"}.
 ${S.set.context?`Contexte et programme de l'athlète (prioritaires : tes conseils doivent les respecter) :\n${S.set.context}\n`:""}${progInfo()?`Position dans le programme : semaine ${progInfo().w}/17, phase ${progInfo().phase}, ≈ ${progInfo().vol} km de course prévus, J-${progInfo().days} avant la course.\n`:""}Indicateurs : forme CTL ${m.ctl.toFixed(0)}, fatigue ATL ${m.atl.toFixed(0)}, fraîcheur TSB ${m.tsb.toFixed(0)}, ratio aigu/chronique ${m.acwr!=null?m.acwr.toFixed(2):"n/d"}, état « ${W.st.l} », historique ${m.histDays} jours.
@@ -1563,7 +1604,7 @@ async function exportWeekIcs(){
   for(const p of ps){
     const s=new Date(`${p.date}T${p.time||S.set.defTime||"18:00"}`), e=new Date(s.getTime()+(+p.dur||45)*60e3);
     L.push("BEGIN:VEVENT",`UID:${p.id}-${p.date}@forma`,`DTSTAMP:${stamp}`,`DTSTART:${fmt(s)}`,`DTEND:${fmt(e)}`,`SUMMARY:${icsEsc(p.title)}`,
-      `DESCRIPTION:${icsEsc(`${SPORTS[p.sport].l} · ${p.dur} min · ${INT()[p.int]||""}${p.notes?"\n"+p.notes:""}`)}`,
+      `DESCRIPTION:${icsEsc(`${SPORTS[p.sport].l} · ${p.dur} min · ${INT()[p.int]||""}${planZone(p)?" · "+zoneTxt(planZone(p)):""}${p.notes?"\n"+p.notes:""}`)}`,
       "BEGIN:VALARM","ACTION:DISPLAY",`DESCRIPTION:${icsEsc(p.title)}`,`TRIGGER:-PT${lead}M`,"END:VALARM","END:VEVENT");
   }
   L.push("END:VCALENDAR");
@@ -1607,6 +1648,7 @@ function maybeKofi(){
 /* ============ rendu ============ */
 function render(){
   if(!S.actsReady && !S.timedOut) return;
+  applyAutoHr();
   $("#today-line").textContent = `${DAYS_L()[(today0().getDay()+6)%7]} ${fmtDate(today0())} · ${t("semaine","week")} ${isoWeek(today0())}`;
   $("#demo-banner").innerHTML = isDemo() ? `<div class="banner"><span><b>${t("Données d'exemple.","Sample data.")}</b> ${t("Importe ton export Garmin ou connecte Strava pour voir tes propres séances.","Import your Garmin export or connect Strava to see your own sessions.")}</span><button class="btn small" data-go="acts">${t("Importer","Import")}</button></div>` : "";
   const fl=$("#fb-login"); if(fl) fl.hidden=!(S.fb&&S.fb.state==="out");
@@ -1636,7 +1678,7 @@ function actRow(a,actions=true){
   const p=paceStr(a.sport,a); const d=parseDay(a.date);
   return `<div class="act"><span class="sw" style="background:${sc(a.sport)}"></span>
     <div style="min-width:0"><div class="t">${esc(a.title)}</div>
-    <div class="m"><span>${fmtDate(d)}</span><span>${fmtDur(a.dur)}</span>${a.dist?`<span>${fmtKm(a.dist)} km</span>`:""}${p?`<span>${p}</span>`:""}${a.hr?`<span>♥ ${Math.round(a.hr)}</span>`:""}<span title="${t("Charge d'entraînement","Training load")}">${Math.round(load(a))} pts</span></div></div>
+    <div class="m"><span>${fmtDate(d)}</span><span>${fmtDur(a.dur)}</span>${a.dist?`<span>${fmtKm(a.dist)} km</span>`:""}${p?`<span>${p}</span>`:""}${a.hr?`<span>♥ ${Math.round(a.hr)}${zoneOfHr(a.hr)?` · Z${zoneOfHr(a.hr)}`:""}</span>`:""}<span title="${t("Charge d'entraînement","Training load")}">${Math.round(load(a))} pts</span></div></div>
     ${actions&&!isDemo()?`<div class="side"><button class="icon-btn" data-edit-act="${a.id}">${t("Modifier","Edit")}</button></div>`:"<span></span>"}</div>`;
 }
 function viewDash(){
@@ -1697,7 +1739,7 @@ function planStatus(p,acts){
 }
 function planItem(p){
   const [c,l]=planStatus(p,ACTS()); const d=parseDay(p.date);
-  return `<button class="item" style="--c:${sc(p.sport)}" data-edit-plan="${p.id}"><span class="it">${esc(p.title)}</span><span class="im"><span>${DAYS()[(d.getDay()+6)%7]} ${d.getDate()}${p.time?` · ${p.time}`:""}</span><span>${p.dur} min</span><span>${INT()[p.int]||""}</span><span class="pill ${c}">${l}</span></span></button>`;
+  return `<button class="item" style="--c:${sc(p.sport)}" data-edit-plan="${p.id}"><span class="it">${esc(p.title)}</span><span class="im"><span>${DAYS()[(d.getDay()+6)%7]} ${d.getDate()}${p.time?` · ${p.time}`:""}</span><span>${p.dur} min</span><span>${INT()[p.int]||""}</span>${planZone(p)?`<span class="zone">♥ ${esc(zoneTxt(planZone(p)))}</span>`:""}<span class="pill ${c}">${l}</span></span></button>`;
 }
 function viewPlan(){
   const acts=ACTS(), plans=PLANS(); const mon=addDays(startOfWeek(today0()),S.weekOff*7); const tk=dayKey(today0());
@@ -1781,7 +1823,10 @@ function viewSet(){
       <div class="f"><label for="s-hrmax">${t("FC max (bpm)","Max HR (bpm)")}</label><input id="s-hrmax" type="number" inputmode="numeric" min="120" max="230" value="${s.hrMax}"></div>
       <div class="f"><label for="s-hrrest">${t("FC repos (bpm)","Resting HR (bpm)")}</label><input id="s-hrrest" type="number" inputmode="numeric" min="30" max="100" value="${s.hrRest}"></div>
     </div>
-    <p class="hint" style="margin:0">${t("Ta montre Garmin les affiche dans Garmin Connect → Statistiques de santé. Elles servent au calcul de la charge et de l'intensité.","Your Garmin watch shows them in Garmin Connect → Health Stats. They're used to compute training load and intensity.")}</p></section>
+    <label class="check"><input type="checkbox" id="s-hrauto" ${s.hrAuto!==false?"checked":""}> ${t("Déterminer la FC max automatiquement à partir de mes séances","Work out my max HR automatically from my sessions")}</label>
+    <p class="hint" style="margin:0">${s.hrAuto!==false?(()=>{ const d=hrMaxDetect(); return d?t(`FC max détectée : ${d.v} bpm (2e valeur la plus haute sur ${d.n} séances avec cardio des 12 derniers mois). Elle se met à jour à chaque nouvelle séance.`,`Detected max HR: ${d.v} bpm (2nd highest value across ${d.n} sessions with HR over the last 12 months). It updates with every new session.`):t("Pas encore de séance avec cardio : la valeur saisie est utilisée.","No session with HR yet: the value entered is used."); })():t("Ta montre Garmin les affiche dans Garmin Connect → Statistiques de santé. Elles servent au calcul de la charge et de l'intensité.","Your Garmin watch shows them in Garmin Connect → Health Stats. They're used to compute training load and intensity.")}</p>
+    <div class="zones">${ZONES().map(z=>`<div class="zr"><b>Z${z.z}</b><span>${esc(z.l)}</span><span class="mono">${z.lo==null?`< ${z.hi+1}`:`${z.lo}–${z.hi}`} bpm</span></div>`).join("")}</div>
+    <p class="hint" style="margin:0">${t("Zones en % de la FC max : Z1 < 68 %, Z2 68–77 %, Z3 77–85 %, Z4 85–92 %, Z5 > 92 %. Chaque séance planifiée affiche sa zone cible, et chaque activité la zone de sa FC moyenne.","Zones as % of max HR: Z1 < 68%, Z2 68–77%, Z3 77–85%, Z4 85–92%, Z5 > 92%. Each planned session shows its target zone, and each activity the zone of its average HR.")}</p></section>
   <section class="card stack"><h2>${t("Objectifs","Goals")}</h2>
     <div class="fields">
       <div class="f"><label for="s-goalh">${t("Heures par semaine","Hours per week")}</label><input id="s-goalh" type="number" step="0.5" min="0" max="40" value="${s.goalH}"></div>
@@ -1950,6 +1995,7 @@ async function runAI(){
   const upcoming=PLANS().filter(p=>p.date>=dayKey(td)).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,10).map(p=>`${p.date} ${SPORTS[p.sport].l} ${p.dur}min ${INT()[p.int]} « ${p.title} »`);
   const prompt=`Tu es un entraîneur multisport expérimenté (course, vélo, natation, renforcement, basket). ${t("Réponds en français, tutoiement, ton direct et concret.","Answer in English, addressing the athlete directly, in a direct and concrete tone.")}
 Date du jour : ${dayKey(td)}.
+Zones cardio : ${ZONES().map(z=>`Z${z.z} ${z.lo==null?"<"+(z.hi+1):z.lo+"–"+z.hi}`).join(", ")} bpm.
 Athlète : FC max ${S.set.hrMax}, FC repos ${S.set.hrRest}, objectif ${S.set.goalH} h/semaine. Objectif principal : ${S.set.goal||"non précisé"}.
 ${S.set.context?`Contexte et programme de l'athlète (prioritaires) :\n${S.set.context}\n`:""}${progInfo()?`Position dans le programme : semaine ${progInfo().w}/17, phase ${progInfo().phase}, J-${progInfo().days} avant la course.\n`:""}Indicateurs : forme CTL ${m.ctl.toFixed(0)}, fatigue ATL ${m.atl.toFixed(0)}, fraîcheur TSB ${m.tsb.toFixed(0)}, ratio charge aiguë/chronique ${m.acwr?m.acwr.toFixed(2):"n/d"}, historique ${m.histDays} jours.
 Volume des 6 dernières semaines :
@@ -2040,6 +2086,7 @@ document.addEventListener("change",e=>{
   if(id==="evo-metric"){ S.evoMetric=v; render(); return; }
   if(id==="s-lang"){ setLang(v); return; }
   if(id==="notif-on"){ setNotif(e.target.checked); return; }
+  if(id==="s-hrauto"){ S.set.hrAuto=e.target.checked; if(e.target.checked) applyAutoHr(); saveSettings(); render(); toast(t("Réglage cardio enregistré.","HR setting saved.")); return; }
   if(id==="notif-analysis"){ S.set.notifAnalysis=e.target.checked; saveSettings(); return; }
   if(id==="notif-lead"){ S.set.notifLead=+v; saveSettings(); scheduleNotifs(); toast(t("Rappel mis à jour.","Reminder updated.")); return; }
   if(id==="s-deftime"){ S.set.defTime=v; saveSettings(); scheduleNotifs(); return; }
@@ -2049,6 +2096,7 @@ document.addEventListener("change",e=>{
   if(id==="kofi-never"){ setKofiOff(e.target.checked); toast(e.target.checked?t("Message désactivé.","Message turned off."):t("Message réactivé.","Message turned back on.")); return; }
   if(id==="kofi-reminder"){ setKofiOff(!e.target.checked); toast(e.target.checked?t("Rappel activé.","Reminder on."):t("Rappel désactivé.","Reminder off.")); return; }
   const map={"s-hrmax":"hrMax","s-hrrest":"hrRest","s-goalh":"goalH","s-rest":"restDay","s-goal":"goal","s-context":"context"};
+  if(id==="s-hrmax"&&S.set.hrAuto!==false){ S.set.hrAuto=false; setTimeout(render,0); }
   if(map[id]){ S.set[map[id]] = (id==="s-goal"||id==="s-context") ? v.trim() : (parseFloat(v)||0); saveSettings(); toast(t("Réglages enregistrés.","Settings saved.")); }
 });
 document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeSheet();
