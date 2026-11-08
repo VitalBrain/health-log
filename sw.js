@@ -1,5 +1,6 @@
-const C="forma-v4";
+const C="forma-v5";
 self.addEventListener("install",e=>{e.waitUntil(caches.open(C).then(c=>c.addAll(["./","./index.html","./manifest.webmanifest","./icon-192.png","./icon-512.png"])));self.skipWaiting();});
+self.addEventListener("push",e=>{let d={};try{d=e.data?e.data.json():{};}catch(x){d={title:"Forma",body:e.data?e.data.text():""};}e.waitUntil(self.registration.showNotification(d.title||"Forma",{body:d.body||"",tag:d.tag||"forma",icon:"icon-192.png",badge:"icon-192.png",renotify:false}));});
 self.addEventListener("notificationclick",e=>{e.notification.close();e.waitUntil(clients.matchAll({type:"window",includeUncontrolled:true}).then(cs=>cs.length?cs[0].focus():clients.openWindow("./")));});
 self.addEventListener("activate",e=>e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
 self.addEventListener("fetch",e=>{const u=new URL(e.request.url);if(e.request.method!=="GET"||u.origin!==location.origin||u.pathname.startsWith("/.netlify/")||u.search.includes("code="))return;

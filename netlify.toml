@@ -6,6 +6,9 @@
 [build.environment]
   SECRETS_SCAN_SMART_DETECTION_OMIT_VALUES = "AIzaSyDF6hKnOqaFM2CE06k-83Rgrahm8MKx0Zk"
 
+[functions]
+  node_bundler = "esbuild"
+
 [[headers]]
   for = "/sw.js"
   [headers.values]

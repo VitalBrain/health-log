@@ -184,6 +184,8 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
 .tg input{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:7px 9px;width:100%;color:var(--ink)}
 .install-steps{display:flex;flex-direction:column;gap:8px;font-size:14.5px;color:var(--ink)}
 .install-steps li{padding-left:2px}
+.check.strong{font-weight:600;font-size:15px}
+.sub{padding-left:26px;gap:8px}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--btn);color:var(--btn-ink);padding:10px 16px;border-radius:10px;font-size:14px;z-index:60;max-width:calc(100% - 32px)}
 .empty{padding:18px;text-align:center;color:var(--muted);font-size:14px}
@@ -1620,7 +1622,7 @@ async function showNotif(title,body,tag){
 }
 function scheduleNotifs(){
   notifTimers.forEach(clearTimeout); notifTimers=[];
-  if(!notifSupported()||!S.set.notifOn||Notification.permission!=="granted") return;
+  if(!notifSupported()||!S.set.notifOn||Notification.permission!=="granted"||pushActive()) return;
   const lead=(+S.set.notifLead||30)*60e3, now=Date.now();
   let sent={}; try{ sent=JSON.parse(localStorage.getItem(NK)||"{}"); }catch(e){}
   for(const p of S.plans){
@@ -1644,6 +1646,102 @@ async function setNotif(on){
   }
   S.set.notifOn=on; saveSettings(); scheduleNotifs(); render();
 }
+/* ---- notifications push : rappels même app fermée (serveur Netlify) ---- */
+const PUSH_ID_K="forma-push-id", PUSH_ON_K="forma-push-on";
+const pushSupported=()=>!!window.__STANDALONE && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+function pushOn(){ try{ return localStorage.getItem(PUSH_ON_K)==="1"; }catch(e){ return false; } }
+function pushActive(){ return pushSupported()&&pushOn()&&Notification.permission==="granted"; }
+function pushId(){ let id=null; try{ id=localStorage.getItem(PUSH_ID_K); }catch(e){}
+  if(!/^[a-f0-9]{32}$/.test(id||"")){ id=[...crypto.getRandomValues(new Uint8Array(16))].map(b=>b.toString(16).padStart(2,"0")).join(""); try{ localStorage.setItem(PUSH_ID_K,id); }catch(e){} }
+  return id; }
+function b64uToU8(s){ const b=atob((s+"=".repeat((4-s.length%4)%4)).replace(/-/g,"+").replace(/_/g,"/")); return Uint8Array.from(b,c=>c.charCodeAt(0)); }
+async function pushSubscription(){
+  const reg=await navigator.serviceWorker.ready;
+  let sub=await reg.pushManager.getSubscription();
+  if(!sub){
+    const r=await fetch("/.netlify/functions/push"); if(!r.ok) throw {code:"fn"};
+    const {publicKey}=await r.json();
+    sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64uToU8(publicKey)});
+  }
+  return sub;
+}
+function buildReminders(){
+  const out=[], now=Date.now(), td=today0();
+  const plans=S.plans.filter(p=>!String(p.id).startsWith("dp"));
+  if(S.set.notifEve!==false){
+    const [hh,mm]=(S.set.eveTime||"20:00").split(":").map(Number);
+    for(let i=0;i<=21;i++){
+      const day=addDays(td,i), k=dayKey(day);
+      const ps=plans.filter(p=>p.date===k).sort((a,b)=>(a.time||S.set.defTime||"").localeCompare(b.time||S.set.defTime||""));
+      if(!ps.length) continue;
+      const at=addDays(day,-1); at.setHours(hh||20,mm||0,0,0);
+      if(at.getTime()<now-2.8*3600e3) continue;
+      const tot=ps.reduce((s,p)=>s+(+p.dur||0),0);
+      out.push({at:at.toISOString(),tag:`eve-${k}-${ps.map(p=>p.id).join("").slice(0,40)}`,
+        title:t(`Demain : ${ps.length} séance${ps.length>1?"s":""} (${fmtDur(tot*60)})`,`Tomorrow: ${ps.length} session${ps.length>1?"s":""} (${fmtDur(tot*60)})`),
+        body:ps.map(p=>`${p.time||S.set.defTime||"18:00"} · ${p.title} · ${p.dur} min${p.int==="intense"?" · "+t("intense","hard"):""}`).join("\n")+(S.set.notifEveTip!==false?"\n"+eveTip(ps):"")});
+    }
+  }
+  if(S.set.notifOn){
+    const lead=(+S.set.notifLead||30)*60e3;
+    for(const p of plans){
+      const time=p.time||S.set.defTime||"18:00", st=new Date(`${p.date}T${time}`).getTime();
+      if(isNaN(st)||st<now||st>now+21*864e5) continue;
+      out.push({at:new Date(st-lead).toISOString(),tag:`s-${p.id}-${p.date}T${time}`,title:t(`${time} : ${p.title}`,`${time}: ${p.title}`),body:`${SPORTS[p.sport].l} · ${p.dur} min · ${INT()[p.int]||""}`});
+    }
+  }
+  return out.sort((a,b)=>a.at.localeCompare(b.at)).slice(0,200);
+}
+function eveTip(ps){
+  const st=loadState(metrics(ACTS()));
+  if(ps.some(p=>p.int==="intense")) return st.k==="over"?t("Fatigue élevée : passe la séance intense en facile.","High fatigue: make the hard session easy."):t("Séance clé demain : dîne bien et couche-toi tôt.","Key session tomorrow: eat well and get to bed early.");
+  return t("Prépare tes affaires ce soir.","Get your kit ready tonight.");
+}
+let pushSig="", pushDeb=null;
+function syncPushSoon(){ clearTimeout(pushDeb); pushDeb=setTimeout(()=>syncPush(false),2500); }
+async function syncPush(force){
+  if(!pushActive()) return;
+  if(S.mode==="db"&&!S.actsServer) return;
+  const rem=buildReminders(), sig=JSON.stringify(rem);
+  if(!force&&sig===pushSig) return true;
+  try{
+    const sub=await pushSubscription();
+    const r=await fetch("/.netlify/functions/push",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"register",id:pushId(),sub:sub.toJSON(),reminders:rem})});
+    if(!r.ok) throw {code:"fn"};
+    pushSig=sig; S.pushErr=null; return true;
+  }catch(e){ S.pushErr=e?.code||"sub"; return false; }
+}
+async function setPush(on){
+  if(on){
+    if(!pushSupported()){ toast(platformOf()==="ios"&&!isInstalled()?t("Sur iPhone, installe d'abord Forma sur l'écran d'accueil (iOS 16.4 ou plus).","On iPhone, first install Forma on your home screen (iOS 16.4+)."):t("Ce navigateur ne gère pas les notifications push.","This browser doesn't support push notifications.")); render(); return; }
+    const p=await Notification.requestPermission();
+    if(p!=="granted"){ toast(t("Notifications refusées : autorise-les dans les réglages du navigateur pour ce site.","Notifications denied: allow them in your browser settings for this site.")); render(); return; }
+    try{ localStorage.setItem(PUSH_ON_K,"1"); }catch(e){}
+    if(S.set.notifEve===undefined){ S.set.notifEve=true; saveSettings(); }
+    const ok=await syncPush(true);
+    if(!ok){ try{ localStorage.removeItem(PUSH_ON_K); }catch(e){} toast(S.pushErr==="fn"?t("Activation impossible : la fonction de notifications n'est pas encore déployée sur ce site.","Couldn't turn on: the notification function isn't deployed on this site yet."):t("Activation impossible : l'abonnement aux notifications a échoué.","Couldn't turn on: the notification subscription failed.")); render(); return; }
+    fetch("/.netlify/functions/push",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"test",id:pushId(),title:"Forma",body:t("Notifications activées : tu recevras tes rappels même app fermée.","Notifications on: you'll get reminders even when the app is closed.")})}).catch(()=>{});
+    toast(t("Notifications activées. Une notification de test arrive.","Notifications on. A test notification is on its way."));
+  } else {
+    try{ localStorage.removeItem(PUSH_ON_K); }catch(e){}
+    try{ await fetch("/.netlify/functions/push",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"unregister",id:pushId()})}); const reg=await navigator.serviceWorker.ready; const sub=await reg.pushManager.getSubscription(); if(sub) await sub.unsubscribe(); }catch(e){}
+    toast(t("Notifications app fermée désactivées.","Closed-app notifications turned off."));
+  }
+  scheduleNotifs(); render();
+}
+
+function pushBlock(){
+  const sup=pushSupported(), on=pushActive();
+  if(!sup) return `<p class="hint" style="margin:0">${platformOf()==="ios"&&!isInstalled()?t("Pour recevoir des rappels même app fermée sur iPhone, installe d'abord Forma (bouton « Télécharger l'app », iOS 16.4 ou plus).","To get reminders with the app closed on iPhone, first install Forma (“Get the app” button, iOS 16.4+)."):t("Ce navigateur ne gère pas les notifications app fermée.","This browser doesn't support closed-app notifications.")}</p>`;
+  return `<label class="check strong"><input type="checkbox" id="push-on" ${on?"checked":""}> ${t("Recevoir mes rappels même quand l'app est fermée","Get reminders even when the app is closed")}</label>
+    ${on?`<div class="sub stack">
+      <label class="check"><input type="checkbox" id="notif-eve" ${S.set.notifEve!==false?"checked":""}> ${t("La veille au soir : résumé des séances du lendemain","The evening before: summary of tomorrow's sessions")}</label>
+      <div class="fields"><div class="f"><label for="eve-time">${t("Heure du rappel de la veille","Evening reminder time")}</label><input id="eve-time" type="time" value="${S.set.eveTime||"20:00"}"></div></div>
+      ${S.pushErr?`<p class="hint" style="margin:0;color:var(--bad)">${t("Dernière mise à jour des rappels échouée : elle sera retentée.","Last reminder update failed: it will be retried.")}</p>`:`<p class="hint" style="margin:0">${t("Tes rappels sont envoyés par le serveur à l'heure prévue, à 15 minutes près.","Your reminders are sent by the server on time, within 15 minutes.")}</p>`}
+      <div class="row"><button class="btn small ghost" id="push-test">${t("Envoyer une notification de test","Send a test notification")}</button></div>
+    </div>`:""}`;
+}
+
 function icsEsc(s){ return String(s||"").replace(/\\/g,"\\\\").replace(/\n/g,"\\n").replace(/([,;])/g,"\\$1"); }
 async function exportWeekIcs(){
   const mon=addDays(startOfWeek(today0()),S.weekOff*7), keys=[0,1,2,3,4,5,6].map(i=>dayKey(addDays(mon,i)));
@@ -1713,7 +1811,7 @@ function render(){
   if(S.tab==="acts") bindDrop();
   for(const id in kept){ const i=document.getElementById(id); if(i) i.value=kept[id]; }
   if(S.tab==="coach"){ const c=$("#chat"); if(c) c.scrollTop=c.scrollHeight; }
-  scheduleNotifsSoon();
+  scheduleNotifsSoon(); syncPushSoon();
 }
 function accountBlock(){
   if(!S.fb||S.fb.state==="noconfig") return `<p class="muted" style="margin:0">${t("Synchronisation pas encore configurée. Colle la configuration de ton projet Firebase pour l'activer.","Sync isn't set up yet. Paste your Firebase project configuration to turn it on.")}</p><div class="row"><button class="btn small" id="fb-setup">${t("Configurer la synchronisation","Set up sync")}</button></div>`;
@@ -1893,12 +1991,13 @@ function viewSet(){
     <div class="row"><button class="btn small ghost" id="ctx-default">${t("Remettre le contexte du programme","Reset to the plan context")}</button><span class="hint">${t("Mets ce texte à jour après le test 10 km de janvier.","Update this text after the January 10K test.")}</span></div>
   </section>
   <section class="card stack"><h2>${t("Rappels & calendrier","Reminders & calendar")}</h2>
+    ${window.__STANDALONE?pushBlock():""}
     ${notifSupported()?`<label class="check"><input type="checkbox" id="notif-on" ${S.set.notifOn&&Notification.permission==="granted"?"checked":""}> ${t("Me rappeler mes séances planifiées","Remind me of my planned sessions")}</label>
     <div class="fields"><div class="f"><label for="notif-lead">${t("Rappel","Reminder")}</label><select id="notif-lead">${[15,30,60,120].map(v=>`<option value="${v}" ${(+S.set.notifLead||30)===v?"selected":""}>${v<60?`${v} min`:`${v/60} h`} ${t("avant","before")}</option>`).join("")}</select></div>
     <div class="f"><label for="s-deftime">${t("Heure habituelle","Usual time")}</label><input id="s-deftime" type="time" value="${S.set.defTime||"18:00"}"></div></div>
     <label class="check"><input type="checkbox" id="notif-analysis" ${S.set.notifAnalysis!==false?"checked":""}> ${t("M'envoyer l'analyse de chaque nouvelle séance Strava","Send me the analysis of each new Strava session")}</label>
     ${"Notification" in window&&Notification.permission==="denied"?`<p class="hint" style="margin:0;color:var(--bad)">${t("Les notifications sont bloquées pour ce site : autorise-les dans les réglages du navigateur.","Notifications are blocked for this site: allow them in your browser settings.")}</p>`:""}
-    <p class="hint" style="margin:0">${t("Les rappels s'affichent quand l'app est ouverte ou encore active en arrière-plan. Pour des rappels garantis, ajoute aussi ta semaine à ton calendrier.","Reminders show while the app is open or still active in the background. For guaranteed reminders, also add your week to your calendar.")}</p>`
+    <p class="hint" style="margin:0">${pushActive()?t("Ces rappels sont envoyés par le serveur, même app fermée.","These reminders are sent by the server, even with the app closed."):t("Sans l'option « app fermée », ces rappels ne s'affichent que si l'app est ouverte ou encore active en arrière-plan.","Without the “app closed” option, these reminders only show while the app is open or still active in the background.")}</p>`
     :`<p class="muted" style="margin:0">${t("Les notifications fonctionnent dans l'app installée. Ici, ajoute ta semaine à ton calendrier : ton téléphone te rappellera chaque séance.","Notifications work in the installed app. Here, add your week to your calendar: your phone will remind you of each session.")}</p>
     <div class="fields"><div class="f"><label for="notif-lead">${t("Rappel","Reminder")}</label><select id="notif-lead">${[15,30,60,120].map(v=>`<option value="${v}" ${(+S.set.notifLead||30)===v?"selected":""}>${v<60?`${v} min`:`${v/60} h`} ${t("avant","before")}</option>`).join("")}</select></div>
     <div class="f"><label for="s-deftime">${t("Heure habituelle","Usual time")}</label><input id="s-deftime" type="time" value="${S.set.defTime||"18:00"}"></div></div>`}
@@ -2114,6 +2213,7 @@ document.addEventListener("click",async e=>{
     case "strava-unlink": if(refs&&refs.strava){ await refs.strava.delete(); S.set.stravaSync=null; saveSettings(); toast(t("Strava déconnecté.","Strava unlinked.")); } break;
     case "dl-app": case "dl-app-2": downloadApp(); break;
     case "install-app": case "install-app-2": installApp(); break;
+    case "push-test": el.disabled=true; await syncPush(true); fetch("/.netlify/functions/push",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"test",id:pushId(),title:t("Test Forma","Forma test"),body:t("Tout fonctionne : tes rappels arriveront même app fermée.","All good: your reminders will arrive even when the app is closed.")})}).then(r=>toast(r.ok?t("Notification de test envoyée.","Test notification sent."):t("Envoi impossible : réactive les notifications.","Couldn't send: turn notifications on again."))).catch(()=>toast(t("Envoi impossible.","Couldn't send."))).finally(()=>{ el.disabled=false; }); break;
     case "a-del": if(el.dataset.confirm){ await delAct(el.dataset.id); closeSheet(); toast(t("Activité supprimée.","Activity deleted.")); } else { el.dataset.confirm="1"; el.textContent=t("Confirmer la suppression","Confirm delete"); el.classList.add("danger"); } break;
     case "p-del": if(String(el.dataset.id).startsWith("dp")){ closeSheet(); toast(t("Séance d'exemple : génère ta propre semaine.","Sample session: generate your own week.")); break; } if(el.dataset.confirm){ await delPlan(el.dataset.id); closeSheet(); toast(t("Séance supprimée.","Session deleted.")); } else { el.dataset.confirm="1"; el.textContent=t("Confirmer la suppression","Confirm delete"); el.classList.add("danger"); } break;
     case "gen-week": el.disabled=true; await genWeek(S.weekOff); el.disabled=false; break;
@@ -2137,10 +2237,13 @@ document.addEventListener("change",e=>{
   if(id==="evo-sport"){ S.evoSport=v; render(); return; }
   if(id==="evo-metric"){ S.evoMetric=v; render(); return; }
   if(id==="s-lang"){ setLang(v); return; }
-  if(id==="notif-on"){ setNotif(e.target.checked); return; }
+  if(id==="notif-on"){ setNotif(e.target.checked).then(()=>syncPush(true)); return; }
+  if(id==="push-on"){ setPush(e.target.checked); return; }
+  if(id==="notif-eve"){ S.set.notifEve=e.target.checked; saveSettings(); syncPush(true); toast(t("Rappel de la veille mis à jour.","Evening reminder updated.")); return; }
+  if(id==="eve-time"){ S.set.eveTime=v||"20:00"; saveSettings(); syncPush(true); toast(t(`Rappel de la veille à ${S.set.eveTime}.`,`Evening reminder at ${S.set.eveTime}.`)); return; }
   if(id==="s-hrauto"){ S.set.hrAuto=e.target.checked; if(e.target.checked) applyAutoHr(); saveSettings(); render(); toast(t("Réglage cardio enregistré.","HR setting saved.")); return; }
   if(id==="notif-analysis"){ S.set.notifAnalysis=e.target.checked; saveSettings(); return; }
-  if(id==="notif-lead"){ S.set.notifLead=+v; saveSettings(); scheduleNotifs(); toast(t("Rappel mis à jour.","Reminder updated.")); return; }
+  if(id==="notif-lead"){ S.set.notifLead=+v; saveSettings(); scheduleNotifs(); syncPush(true); toast(t("Rappel mis à jour.","Reminder updated.")); return; }
   if(id==="s-deftime"){ S.set.defTime=v; saveSettings(); scheduleNotifs(); return; }
   if(id&&id.startsWith("tg-")){ const k=id.slice(3); const tg={...(S.set.targets||{})}; if(v==="") delete tg[k]; else tg[k]=Math.max(0,Math.min(7,parseInt(v)||0)); S.set.targets=tg; saveSettings(); toast(t("Répartition enregistrée : elle s'applique à « Proposer ma semaine ».","Split saved: it applies to “Suggest my week”.")); return; }
   if(id==="coach-engine"){ S.set.coachEngine=v; saveSettings(); toast(t("Moteur du coach mis à jour.","Coach engine updated.")); return; }
