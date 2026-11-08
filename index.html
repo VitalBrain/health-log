@@ -182,6 +182,8 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
 .tgs{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
 .tg{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
 .tg input{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:7px 9px;width:100%;color:var(--ink)}
+.install-steps{display:flex;flex-direction:column;gap:8px;font-size:14.5px;color:var(--ink)}
+.install-steps li{padding-left:2px}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--btn);color:var(--btn-ink);padding:10px 16px;border-radius:10px;font-size:14px;z-index:60;max-width:calc(100% - 32px)}
 .empty{padding:18px;text-align:center;color:var(--muted);font-size:14px}
@@ -200,7 +202,7 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
       <a class="btn small ghost kofi" id="kofi-btn" href="https://ko-fi.com/forma_training" target="_blank" rel="noopener"><span aria-hidden="true">☕</span> <span id="kofi-label">Soutenir</span></a>
       <button class="btn small ghost" id="lang-btn" aria-label="Langue / Language">EN</button>
       <button class="btn small" id="fb-login" hidden="">Se connecter</button>
-      <button class="btn small" id="install-app" hidden="">Installer l'app</button>
+      <button class="btn small" id="install-app" hidden="">⬇ Télécharger l'app</button>
       <button class="btn small" id="dl-app" hidden="">Télécharger l'app</button>
     </div>
   </header>
@@ -296,7 +298,7 @@ function applyStatic(){
   document.querySelectorAll("nav.tabs button").forEach(b=>b.textContent=tabs[b.dataset.tab]);
   const set=(id,txt)=>{ const el=document.getElementById(id); if(el&&!el.disabled) el.textContent=txt; };
   set("fb-login",t("Se connecter","Sign in")); set("kofi-label",t("Soutenir","Support"));
-  set("foot-txt",t("Forma est gratuit et sans publicité.","Forma is free and ad-free.")); set("foot-link",t("Offre-moi un café sur Ko-fi ↗","Buy me a coffee on Ko-fi ↗")); set("install-app",t("Installer l'app","Install app")); set("dl-app",t("Télécharger l'app","Download app"));
+  set("foot-txt",t("Forma est gratuit et sans publicité.","Forma is free and ad-free.")); set("foot-link",t("Offre-moi un café sur Ko-fi ↗","Buy me a coffee on Ko-fi ↗")); set("install-app","⬇ "+t("Télécharger l'app","Get the app")); set("dl-app",t("Télécharger l'app","Download app"));
   const lb=$("#lang-btn"); if(lb){ lb.textContent=LANG==="en"?"FR":"EN"; lb.title=LANG==="en"?"Passer en français":"Switch to English"; }
   document.documentElement.lang=LANG;
   setSync(...syncMsg);
@@ -1118,8 +1120,57 @@ async function downloadApp(){
 }
 if(window.__STANDALONE){
   if("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(()=>{});
-  window.addEventListener("beforeinstallprompt",e=>{ e.preventDefault(); S.installEvt=e; $("#install-app").hidden=false; });
-  window.addEventListener("appinstalled",()=>{ $("#install-app").hidden=true; toast(t("Application installée.","App installed.")); });
+  window.addEventListener("beforeinstallprompt",e=>{ e.preventDefault(); S.installEvt=e; showInstallBtn(); if(S.tab==="set") render(); });
+  window.addEventListener("appinstalled",()=>{ S.installEvt=null; S.installed=true; showInstallBtn(); toast(t("Application installée : retrouve Forma sur ton écran d'accueil.","App installed: find Forma on your home screen.")); if(S.tab==="set") render(); });
+  showInstallBtn();
+}
+/* ============ télécharger / installer l'application ============ */
+function isInstalled(){ try{ return S.installed || matchMedia("(display-mode: standalone)").matches || matchMedia("(display-mode: window-controls-overlay)").matches || navigator.standalone===true; }catch(e){ return false; } }
+function showInstallBtn(){ const b=$("#install-app"); if(b) b.hidden=!window.__STANDALONE||isInstalled(); }
+function platformOf(){ const ua=navigator.userAgent||""; if(/iPhone|iPad|iPod/i.test(ua)||(/Macintosh/.test(ua)&&navigator.maxTouchPoints>1)) return "ios"; if(/Android/i.test(ua)) return "android"; return "desktop"; }
+async function installApp(){
+  if(isInstalled()){ toast(t("Forma est déjà installée sur cet appareil.","Forma is already installed on this device.")); return; }
+  if(S.installEvt){
+    const ev=S.installEvt; S.installEvt=null;
+    try{ ev.prompt(); const r=await ev.userChoice; if(r&&r.outcome==="dismissed") toast(t("Installation annulée. Tu peux la relancer depuis Réglages.","Install cancelled. You can start it again from Settings.")); }catch(e){ openInstallHelp(); }
+    return;
+  }
+  openInstallHelp();
+}
+function openInstallHelp(){
+  const pf=platformOf(); const ua=navigator.userAgent||"";
+  const notSafari=pf==="ios"&&/CriOS|FxiOS|EdgiOS/.test(ua), samsung=/SamsungBrowser/.test(ua), firefoxA=pf==="android"&&/Firefox/.test(ua);
+  const steps = pf==="ios" ? [
+      t("Ouvre ce site dans <b>Safari</b>.","Open this site in <b>Safari</b>."),
+      t("Touche le bouton <b>Partager</b> (le carré avec une flèche vers le haut).","Tap the <b>Share</b> button (the square with an up arrow)."),
+      t("Choisis <b>Sur l'écran d'accueil</b>, puis <b>Ajouter</b>.","Choose <b>Add to Home Screen</b>, then <b>Add</b>.")]
+    : pf==="android" ? (samsung ? [
+      t("Touche le menu <b>☰</b> en bas de l'écran.","Tap the <b>☰</b> menu at the bottom."),
+      t("Choisis <b>Ajouter page à</b> → <b>Écran d'accueil</b>.","Choose <b>Add page to</b> → <b>Home screen</b>.")]
+    : firefoxA ? [
+      t("Touche le menu <b>⋮</b>.","Tap the <b>⋮</b> menu."),
+      t("Choisis <b>Installer</b> ou <b>Ajouter à l'écran d'accueil</b>.","Choose <b>Install</b> or <b>Add to Home screen</b>.")]
+    : [
+      t("Touche le menu <b>⋮</b> en haut à droite de Chrome.","Tap the <b>⋮</b> menu at the top right of Chrome."),
+      t("Choisis <b>Installer l'application</b> (ou <b>Ajouter à l'écran d'accueil</b>).","Choose <b>Install app</b> (or <b>Add to Home screen</b>)."),
+      t("Confirme avec <b>Installer</b> : Forma apparaît avec tes autres applis.","Confirm with <b>Install</b>: Forma shows up with your other apps.")])
+    : [
+      t("Dans Chrome ou Edge, clique sur l'icône <b>Installer</b> (un écran avec une flèche) à droite de la barre d'adresse.","In Chrome or Edge, click the <b>Install</b> icon (a screen with an arrow) at the right of the address bar."),
+      t("Ou ouvre le menu <b>⋮</b> → <b>Caster, enregistrer et partager</b> → <b>Installer la page en tant qu'application</b>.","Or open the <b>⋮</b> menu → <b>Cast, save and share</b> → <b>Install page as app</b>."),
+      t("Sur Mac avec Safari : menu <b>Fichier</b> → <b>Ajouter au Dock</b>.","On a Mac with Safari: <b>File</b> menu → <b>Add to Dock</b>.")];
+  sheet(`<div class="install stack">
+    <div class="row" style="gap:12px;flex-wrap:nowrap"><img src="icon-192.png" alt="" width="52" height="52" style="border-radius:12px;flex:none"><div class="stack" style="gap:2px"><h2>${t("Télécharger Forma","Get Forma")}</h2><span class="hint">${t("Gratuit · s'ouvre en plein écran · fonctionne hors connexion","Free · opens full screen · works offline")}</span></div></div>
+    ${notSafari?`<p class="hint" style="margin:0;color:var(--warn)">${t("Sur iPhone, l'installation ne fonctionne que depuis Safari.","On iPhone, installing only works from Safari.")}</p>`:""}
+    <ol class="steps install-steps">${steps.map(x=>`<li>${x}</li>`).join("")}</ol>
+    <p class="hint" style="margin:0">${t("Tes séances restent synchronisées avec ton compte Google : rien à transférer.","Your sessions stay synced with your Google account: nothing to transfer.")}</p>
+    <div class="row" style="justify-content:flex-end"><button class="btn small ghost" data-copy="${esc(location.origin+location.pathname)}" data-label="${t("Lien de l'app","App link")}">${t("Copier le lien de l'app","Copy app link")}</button><button class="btn small" data-close>${t("Compris","Got it")}</button></div>
+  </div>`);
+}
+function installBlock(){
+  if(!window.__STANDALONE) return "";
+  if(isInstalled()) return `<p class="muted" style="margin:0">✓ ${t("Forma est installée sur cet appareil.","Forma is installed on this device.")}</p>`;
+  return `<p class="muted" style="margin:0">${t("Installe Forma comme une vraie application : icône sur l'écran d'accueil, plein écran, rappels de séance et accès hors connexion.","Install Forma like a real app: home-screen icon, full screen, session reminders and offline access.")}</p>
+    <div class="row"><button class="btn small" id="install-app-2">⬇ ${t("Télécharger l'app","Get the app")}</button></div>`;
 }
 document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible" && S.set.stravaSync && Date.now()-Date.parse(S.set.stravaSync)>15*60e3 && S.autoSynced){ S.autoSynced=false; maybeAutoSync(); } });
 
@@ -1863,6 +1914,7 @@ function viewSet(){
     :`<p class="muted" style="margin:0">${S.sample?t("Dans cette version, le coach utilise ton compte Claude, sans frais supplémentaires.","In this version the coach uses your Claude account, at no extra cost."):t("Claude n'est pas disponible dans cette vue : le coach gratuit répond à partir de tes données.","Claude isn't available in this view: the free coach answers from your data.")}</p>`}
   </section>
   <section class="card stack"><h2>Application</h2>
+    ${installBlock()}
     ${window.__STANDALONE ? accountBlock() : `<p class="muted" style="margin:0">${t("« Télécharger l'app » crée un dossier prêt pour Netlify, comme tes autres apps : connexion Google via ton projet Firebase, synchro Strava automatique, installable sur Android. Le fichier LISEZMOI.txt détaille la mise en ligne. Tes séances actuelles sont incluses.","“Download app” creates a Netlify-ready folder: Google sign-in through your Firebase project, automatic Strava sync, installable on Android. LISEZMOI.txt explains how to put it online. Your current sessions are included.")}</p>`}
     ${S.dl?`<div class="row"><button class="btn small" id="dl-app-2">${t("Télécharger l'app","Download app")}</button></div>`:""}
   </section>
@@ -2061,7 +2113,7 @@ document.addEventListener("click",async e=>{
     case "fb-logout": if(S.fb&&S.fb.auth){ await S.fb.auth.signOut(); toast(t("Déconnecté.","Signed out.")); } break;
     case "strava-unlink": if(refs&&refs.strava){ await refs.strava.delete(); S.set.stravaSync=null; saveSettings(); toast(t("Strava déconnecté.","Strava unlinked.")); } break;
     case "dl-app": case "dl-app-2": downloadApp(); break;
-    case "install-app": if(S.installEvt){ S.installEvt.prompt(); S.installEvt=null; $("#install-app").hidden=true; } break;
+    case "install-app": case "install-app-2": installApp(); break;
     case "a-del": if(el.dataset.confirm){ await delAct(el.dataset.id); closeSheet(); toast(t("Activité supprimée.","Activity deleted.")); } else { el.dataset.confirm="1"; el.textContent=t("Confirmer la suppression","Confirm delete"); el.classList.add("danger"); } break;
     case "p-del": if(String(el.dataset.id).startsWith("dp")){ closeSheet(); toast(t("Séance d'exemple : génère ta propre semaine.","Sample session: generate your own week.")); break; } if(el.dataset.confirm){ await delPlan(el.dataset.id); closeSheet(); toast(t("Séance supprimée.","Session deleted.")); } else { el.dataset.confirm="1"; el.textContent=t("Confirmer la suppression","Confirm delete"); el.classList.add("danger"); } break;
     case "gen-week": el.disabled=true; await genWeek(S.weekOff); el.disabled=false; break;
