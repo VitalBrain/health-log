@@ -186,6 +186,12 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
 .install-steps li{padding-left:2px}
 .check.strong{font-weight:600;font-size:15px}
 .sub{padding-left:26px;gap:8px}
+.rangebar{display:flex;flex-direction:column;gap:8px}
+.rangebar.compact .chip{padding:3px 9px;font-size:12.5px}
+.rg-dates{gap:10px}
+.rg-dates .f{flex:1;min-width:130px;display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted)}
+.rg-dates input{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:7px 9px;color:var(--ink);width:100%}
+.rangecard{position:sticky;top:calc(env(safe-area-inset-top,0px) + 50px);z-index:5}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--btn);color:var(--btn-ink);padding:10px 16px;border-radius:10px;font-size:14px;z-index:60;max-width:calc(100% - 32px)}
 .empty{padding:18px;text-align:center;color:var(--muted);font-size:14px}
@@ -539,7 +545,7 @@ function dailySeries(acts,days){
   const t=today0(); const map={};
   for(const a of acts){ const k=a.date.slice(0,10); map[k]=(map[k]||0)+load(a); }
   const first = acts.length ? acts.reduce((m,a)=>a.date<m?a.date:m,acts[0].date).slice(0,10) : dayKey(t);
-  let d=parseDay(first); const lim=addDays(t,-400); if(d<lim) d=lim;
+  let d=parseDay(first); const lim=addDays(t,-1500); if(d<lim) d=lim;
   const out=[]; let ctl=0,atl=0;
   while(d<=t){ const k=dayKey(d); const l=map[k]||0; ctl+=(l-ctl)/42; atl+=(l-atl)/7; out.push({k,d:new Date(d),l,ctl,atl,tsb:ctl-atl}); d=addDays(d,1); }
   return days ? out.slice(-days) : out;
@@ -1806,8 +1812,8 @@ function render(){
   Object.values(charts).forEach(c=>c.destroy()); for(const k in charts) delete charts[k];
   const kept={}; v.querySelectorAll("[data-keep]").forEach(i=>{ if(i.value) kept[i.id]=i.value; });
   v.innerHTML = ({dash:viewDash,plan:viewPlan,acts:viewActs,coach:viewCoach,evo:viewEvo,set:viewSet})[S.tab]();
-  if(S.tab==="dash") drawFormChart("c-form",56);
-  if(S.tab==="evo"){ drawVolume(); drawFormChart("c-form2",120); drawTrend(); }
+  if(S.tab==="dash") drawFormChart("c-form");
+  if(S.tab==="evo"){ drawVolume(); drawFormChart("c-form2"); drawTrend(); }
   if(S.tab==="acts") bindDrop();
   for(const id in kept){ const i=document.getElementById(id); if(i) i.value=kept[id]; }
   if(S.tab==="coach"){ const c=$("#chat"); if(c) c.scrollTop=c.scrollHeight; }
@@ -1855,7 +1861,8 @@ function viewDash(){
     </section>
     <div class="stack">
       <section class="card stack">
-        <div class="row between"><h2>${t("Forme &amp; fatigue","Fitness &amp; fatigue")}</h2><span class="label">${t("8 semaines","8 weeks")}</span></div>
+        <div class="row between"><h2>${t("Forme &amp; fatigue","Fitness &amp; fatigue")}</h2><span class="label">${esc(rangeLabel())}</span></div>
+        ${rangeBar(true)}
         <div class="legend"><span><i class="sw" style="background:var(--ink)"></i>${t("Forme","Fitness")} (CTL)</span><span><i class="sw" style="background:var(--s-course)"></i>Fatigue (ATL)</span><span><i class="sw" style="background:var(--s-natation);opacity:.5"></i>${t("Fraîcheur","Freshness")} (TSB)</span></div>
         <div class="chartbox"><canvas id="c-form" aria-label="${t("Courbes de forme et fatigue","Fitness and fatigue curves")}"></canvas></div>
       </section>
@@ -1947,10 +1954,11 @@ function viewEvo(){
   const opts=metricsBySport[S.evoSport]; if(!opts.some(o=>o[0]===S.evoMetric)) S.evoMetric=opts[0][0];
   const used=SK.filter(k=>ACTS().some(a=>a.sport===k));
   return `<div class="stack">
-  <section class="card stack"><div class="row between"><h2>${t("Volume hebdomadaire","Weekly volume")}</h2><span class="label">${t("heures · 12 semaines","hours · 12 weeks")}</span></div>
+  <section class="card stack rangecard"><div class="row between"><h2>${t("Période","Period")}</h2><span class="label">${esc(rangeLabel())}</span></div>${rangeBar(false)}</section>
+  <section class="card stack"><div class="row between"><h2>${buckets().length&&(buckets()[0].e-buckets()[0].s)>8*864e5?t("Volume mensuel","Monthly volume"):t("Volume hebdomadaire","Weekly volume")}</h2><span class="label">${t("heures","hours")} · ${esc(rangeLabel())}</span></div>
     <div class="legend">${used.map(k=>`<span><i class="sw" style="background:${sc(k)}"></i>${SPORTS[k].l}</span>`).join("")}</div>
     <div class="chartbox"><canvas id="c-vol"></canvas></div></section>
-  <section class="card stack"><div class="row between"><h2>${t("Forme, fatigue, fraîcheur","Fitness, fatigue, freshness")}</h2><span class="label">${t("17 semaines","17 weeks")}</span></div>
+  <section class="card stack"><div class="row between"><h2>${t("Forme, fatigue, fraîcheur","Fitness, fatigue, freshness")}</h2><span class="label">${esc(rangeLabel())}</span></div>
     <div class="legend"><span><i class="sw" style="background:var(--ink)"></i>${t("Forme (CTL, moyenne 42 j)","Fitness (CTL, 42-day average)")}</span><span><i class="sw" style="background:var(--s-course)"></i>${t("Fatigue (ATL, moyenne 7 j)","Fatigue (ATL, 7-day average)")}</span><span><i class="sw" style="background:var(--s-natation);opacity:.5"></i>${t("Fraîcheur","Freshness")} = CTL − ATL</span></div>
     <div class="chartbox"><canvas id="c-form2"></canvas></div>
     <p class="hint" style="margin:0">${t(`Charge par séance = TRIMP (durée × intensité cardiaque, FC max ${S.set.hrMax} / repos ${S.set.hrRest}) ou, sans cardio, durée × ressenti (RPE).`,`Load per session = TRIMP (duration × heart-rate intensity, max HR ${S.set.hrMax} / resting ${S.set.hrRest}) or, without heart rate, duration × perceived effort (RPE).`)}</p></section>
@@ -2037,10 +2045,50 @@ function baseOpts(){
     scales:{x:{ticks:{color:tick,font:{family:"IBM Plex Mono",size:10.5},maxRotation:0,autoSkipPadding:12},grid:{display:false},border:{color:grid}},
             y:{ticks:{color:tick,font:{family:"IBM Plex Mono",size:10.5}},grid:{color:grid},border:{display:false}}}};
 }
-function drawFormChart(id,days){
+/* ---- période des graphiques ---- */
+const RANGE_K="forma-range";
+const RANGES=[["28",()=>t("4 sem.","4 wk")],["56",()=>t("8 sem.","8 wk")],["91",()=>t("3 mois","3 mo")],["182",()=>t("6 mois","6 mo")],["365",()=>t("1 an","1 yr")],["all",()=>t("Tout","All")],["custom",()=>t("Dates…","Dates…")]];
+S.range=(()=>{ try{ const r=JSON.parse(localStorage.getItem(RANGE_K)||"null"); if(r&&r.k) return r; }catch(e){} return {k:"91"}; })();
+function saveRange(){ try{ localStorage.setItem(RANGE_K,JSON.stringify(S.range)); }catch(e){} }
+function rangeBounds(){
+  const td=today0(), r=S.range;
+  if(r.k==="custom"&&r.from){ let a=parseDay(r.from), b=r.to?parseDay(r.to):td; if(b>td) b=td; if(a>b) [a,b]=[b,a]; return {start:a,end:b}; }
+  if(r.k==="all"){ const acts=ACTS(); const first=acts.length?acts.reduce((m,x)=>x.date<m?x.date:m,acts[0].date).slice(0,10):dayKey(addDays(td,-90)); let a=parseDay(first); const lim=addDays(td,-1500); if(a<lim) a=lim; return {start:a,end:td}; }
+  const n=parseInt(r.k)||91; return {start:addDays(td,-(n-1)),end:td};
+}
+function rangeLabel(){
+  const {start,end}=rangeBounds(); const r=S.range;
+  if(r.k!=="custom"&&r.k!=="all"){ const n=+r.k; return n<=56?t(`${n/7} semaines`,`${n/7} weeks`):n<365?t(`${Math.round(n/30.4)} mois`,`${Math.round(n/30.4)} months`):t("1 an","1 year"); }
+  const y=d=>d.getFullYear()!==today0().getFullYear()?` ${d.getFullYear()}`:"";
+  return `${fmtDate(start)}${y(start)} – ${fmtDate(end)}${y(end)}`;
+}
+function rangeBar(compact){
+  const r=S.range;
+  return `<div class="rangebar${compact?" compact":""}" role="group" aria-label="${t("Période des graphiques","Chart period")}">
+    <div class="chips">${RANGES.map(([k,l])=>`<button class="chip" data-range="${k}" aria-pressed="${r.k===k}">${l()}</button>`).join("")}</div>
+    ${r.k==="custom"?`<div class="row rg-dates"><label class="f"><span>${t("Du","From")}</span><input type="date" id="rg-from" max="${dayKey(today0())}" value="${r.from||dayKey(addDays(today0(),-90))}"></label><label class="f"><span>${t("Au","To")}</span><input type="date" id="rg-to" max="${dayKey(today0())}" value="${r.to||dayKey(today0())}"></label></div>`:""}
+  </div>`;
+}
+/* regroupe par semaine, ou par mois au-delà d'environ 18 mois */
+function buckets(){
+  const {start,end}=rangeBounds(); const out=[];
+  if((end-start)/864e5>540){
+    let d=new Date(start.getFullYear(),start.getMonth(),1);
+    while(d<=end){ const e=new Date(d.getFullYear(),d.getMonth()+1,1); out.push({s:d,e,label:`${MONTHS()[d.getMonth()]}${d.getMonth()===0||!out.length?" "+String(d.getFullYear()).slice(2):""}`}); d=e; }
+  } else {
+    let d=startOfWeek(start);
+    while(d<=end){ out.push({s:d,e:addDays(d,7),label:`${t("S","W")}${isoWeek(d)}`}); d=addDays(d,7); }
+  }
+  return out;
+}
+const inB=(a,b)=>{ const d=parseDay(a.date); return d>=b.s&&d<b.e; };
+function drawFormChart(id){
   const el=document.getElementById(id); if(!el||!window.Chart) return;
-  const ser=dailySeries(ACTS(),days);
-  charts[id]=new Chart(el,{data:{labels:ser.map(x=>t(`${x.d.getDate()}/${x.d.getMonth()+1}`,`${x.d.getMonth()+1}/${x.d.getDate()}`)),datasets:[
+  const {start,end}=rangeBounds();
+  const ser=dailySeries(ACTS()).filter(x=>x.d>=start&&x.d<=end);
+  const long=(end-start)/864e5>200;
+  const lab=x=>long?t(`${x.d.getDate()} ${MONTHS()[x.d.getMonth()]}`,`${MONTHS()[x.d.getMonth()]} ${x.d.getDate()}`):t(`${x.d.getDate()}/${x.d.getMonth()+1}`,`${x.d.getMonth()+1}/${x.d.getDate()}`);
+  charts[id]=new Chart(el,{data:{labels:ser.map(lab),datasets:[
     {type:"bar",label:t("Fraîcheur","Freshness"),data:ser.map(x=>+x.tsb.toFixed(1)),backgroundColor:cssVar("--s-natation")+"66",borderWidth:0,order:3},
     {type:"line",label:t("Forme","Fitness"),data:ser.map(x=>+x.ctl.toFixed(1)),borderColor:cssVar("--ink"),borderWidth:2.2,pointRadius:0,tension:.3,order:1},
     {type:"line",label:"Fatigue",data:ser.map(x=>+x.atl.toFixed(1)),borderColor:cssVar("--s-course"),borderWidth:1.6,pointRadius:0,tension:.3,order:2}
@@ -2049,23 +2097,24 @@ function drawFormChart(id,days){
 function weeksBack(n){ const mon=startOfWeek(today0()); return Array.from({length:n},(_,i)=>addDays(mon,-(n-1-i)*7)); }
 function drawVolume(){
   const el=$("#c-vol"); if(!el||!window.Chart) return;
-  const wk=weeksBack(12); const acts=ACTS();
+  const bk=buckets(); const acts=ACTS(); const monthly=bk.length&&(bk[0].e-bk[0].s)>8*864e5;
   const ds=SK.filter(k=>acts.some(a=>a.sport===k)).map(k=>({label:SPORTS[k].l,backgroundColor:cssVar(SPORTS[k].v),borderRadius:2,
-    data:wk.map(w=>+(acts.filter(a=>a.sport===k&&parseDay(a.date)>=w&&parseDay(a.date)<addDays(w,7)).reduce((s,a)=>s+a.dur,0)/3600).toFixed(2))}));
+    data:bk.map(b=>+(acts.filter(a=>a.sport===k&&inB(a,b)).reduce((s,a)=>s+a.dur,0)/3600).toFixed(2))}));
   const o=baseOpts(); o.scales.x.stacked=true; o.scales.y.stacked=true; o.scales.y.ticks.callback=v=>v+" h";
-  if(S.set.goalH){ ds.push({type:"line",label:t("Objectif","Goal"),data:wk.map(()=>S.set.goalH),borderColor:cssVar("--muted"),borderDash:[4,4],borderWidth:1.2,pointRadius:0,stack:"goal"}); }
-  charts.vol=new Chart(el,{type:"bar",data:{labels:wk.map(w=>`${t("S","W")}${isoWeek(w)}`),datasets:ds},options:o});
+  if(S.set.goalH&&!monthly){ ds.push({type:"line",label:t("Objectif","Goal"),data:bk.map(()=>S.set.goalH),borderColor:cssVar("--muted"),borderDash:[4,4],borderWidth:1.2,pointRadius:0,stack:"goal"}); }
+  charts.vol=new Chart(el,{type:"bar",data:{labels:bk.map(b=>b.label),datasets:ds},options:o});
 }
 function drawTrend(){
   const el=$("#c-trend"); if(!el||!window.Chart) return;
   const sp=S.evoSport, mt=S.evoMetric; const acts=ACTS().filter(a=>a.sport===sp).sort((a,b)=>a.date.localeCompare(b.date));
   const o=baseOpts(); const col=cssVar(SPORTS[sp].v); let data,labels,type="line",note="";
   if(mt==="dist"||mt==="time"){
-    const wk=weeksBack(16); labels=wk.map(w=>`${t("S","W")}${isoWeek(w)}`); type="bar";
-    data=wk.map(w=>{ const xs=acts.filter(a=>parseDay(a.date)>=w&&parseDay(a.date)<addDays(w,7)); return mt==="dist"?+xs.reduce((s,a)=>s+(a.dist||0),0).toFixed(1):+(xs.reduce((s,a)=>s+a.dur,0)/3600).toFixed(2); });
+    const bk=buckets(); labels=bk.map(b=>b.label); type="bar";
+    data=bk.map(b=>{ const xs=acts.filter(a=>inB(a,b)); return mt==="dist"?+xs.reduce((s,a)=>s+(a.dist||0),0).toFixed(1):+(xs.reduce((s,a)=>s+a.dur,0)/3600).toFixed(2); });
     o.scales.y.ticks.callback=v=>v+(mt==="dist"?" km":" h");
   } else {
-    const xs=acts.filter(a=>parseDay(a.date)>=addDays(today0(),-120)).filter(a=>mt==="hr"?a.hr:(a.dist&&a.dur));
+    const {start,end}=rangeBounds();
+    const xs=acts.filter(a=>{ const d=parseDay(a.date); return d>=start&&d<=end; }).filter(a=>mt==="hr"?a.hr:(a.dist&&a.dur));
     labels=xs.map(a=>{const d=parseDay(a.date);return t(`${d.getDate()}/${d.getMonth()+1}`,`${d.getMonth()+1}/${d.getDate()}`);});
     data=xs.map(a=>{
       if(mt==="hr") return Math.round(a.hr);
@@ -2179,6 +2228,7 @@ document.addEventListener("click",async e=>{
   if(el.dataset.editAct){ openAct(S.acts.find(a=>a.id===el.dataset.editAct)); return; }
   if(el.dataset.editPlan){ const p=PLANS().find(x=>x.id===el.dataset.editPlan); if(p) openPlan(p); return; }
   if(el.dataset.addPlan){ openPlan(null,el.dataset.addPlan); return; }
+  if(el.dataset.range){ const k=el.dataset.range; S.range = k==="custom" ? {k,from:S.range.from||dayKey(addDays(today0(),-90)),to:S.range.to||dayKey(today0())} : {k}; saveRange(); render(); return; }
   if(el.dataset.ask){ askCoach(el.dataset.ask); return; }
   if(el.id==="kofi-go"){ kofiSave({clicked:Date.now()}); setTimeout(closeSheet,300); return; }
   if(el.dataset.copy!==undefined){ const v=el.dataset.copy; try{ await navigator.clipboard.writeText(v); toast(t("Copié : ","Copied: ")+(el.dataset.label||(v.length>48?v.slice(0,45)+"…":v))); }catch(err){ const span=el.previousElementSibling; if(span){ const r=document.createRange(); r.selectNodeContents(span); const sel=getSelection(); sel.removeAllRanges(); sel.addRange(r); } toast(t("Sélectionné : copie-le avec ton clavier.","Selected: copy it with your keyboard.")); } return; }
@@ -2236,6 +2286,7 @@ document.addEventListener("change",e=>{
   if(id==="file-in"){ importFiles([...e.target.files]); e.target.value=""; return; }
   if(id==="evo-sport"){ S.evoSport=v; render(); return; }
   if(id==="evo-metric"){ S.evoMetric=v; render(); return; }
+  if(id==="rg-from"||id==="rg-to"){ S.range={...S.range,k:"custom",[id==="rg-from"?"from":"to"]:v}; saveRange(); render(); return; }
   if(id==="s-lang"){ setLang(v); return; }
   if(id==="notif-on"){ setNotif(e.target.checked).then(()=>syncPush(true)); return; }
   if(id==="push-on"){ setPush(e.target.checked); return; }
