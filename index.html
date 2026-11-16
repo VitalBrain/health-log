@@ -342,7 +342,7 @@ async function initStore(){
         S.mode="db"; setSync("ok","Synchronisé sur ton compte","Synced to your account");
         root.onSnapshot(s=>{ if(s.exists){ S.set={...DEF_SET,...s.data()}; if(S.set.lang&&S.set.lang!==LANG) setLang(S.set.lang,false); render(); } }, e=>setSync("wait","Sync interrompue","Sync interrupted"));
         refs.acts.onSnapshot(q=>{ S.acts=q.docs.map(d=>({id:d.id,...d.data()})); if(!q.metadata.fromCache){ S.actsReady=true; S.actsServer=true; maybeAutoSync(); } else if(q.size) S.actsReady=true; render(); }, e=>setSync("wait","Sync interrompue","Sync interrupted"));
-        refs.plans.onSnapshot(q=>{ S.plans=q.docs.map(d=>({id:d.id,...d.data()})); if(!q.metadata.fromCache||q.size) S.plansReady=true; render(); }, ()=>{});
+        refs.plans.onSnapshot(q=>{ S.plans=q.docs.map(d=>({id:d.id,...d.data()})); if(!q.metadata.fromCache||q.size) S.plansReady=true; if(!q.metadata.fromCache) S.plansSynced=true; render(); }, ()=>{});
         C.use("sample").then(sm=>{ S.sample=sm; render(); });
         C.use("downloads").then(d=>{ S.dl=d; $("#dl-app").hidden=!d; render(); }).catch(()=>{});
         Promise.all([C.use("mcp"),C.use("permissions")]).then(([m,p])=>{ S.mcp=m; S.perms=p; if(m) S.stravaMode="mcp"; render(); maybeAutoSync(); }).catch(()=>{});
@@ -478,7 +478,8 @@ function attachFirestore(u){
     if(!q.metadata.fromCache){ S.actsReady=true; S.actsServer=true; if(!migrated){ migrated=true; migrateLocal(q.empty,pendActs,pendPlans); } maybeAutoSync(); }
     render();
   }, fail));
-  unsubs.push(refs.plans.onSnapshot(q=>{ S.plans=q.docs.map(d=>({id:d.id,...d.data()})); render(); }, ()=>{}));
+  S.plansSynced=false;
+  unsubs.push(refs.plans.onSnapshot(q=>{ S.plans=q.docs.map(d=>({id:d.id,...d.data()})); if(!q.metadata.fromCache) S.plansSynced=true; render(); }, ()=>{}));
   unsubs.push(refs.strava.onSnapshot(sn=>{ S.stravaTok=sn.exists?sn.data():null; S.stravaTokLoaded=true; maybeShowStravaSetup(); render(); maybeAutoSync(); }, ()=>{}));
   unsubs.push(refs.coach.onSnapshot(sn=>{ S.coachKey=sn.exists?(sn.data().apiKey||null):null; if(S.tab==="coach"||S.tab==="set") render(); }, ()=>{}));
   unsubs.push(refs.stravaApp.onSnapshot(sn=>{ S.stravaApp=sn.exists?sn.data():null; stravaAppLoaded=true; resolveStravaMode(); render(); maybeAutoSync(); }, ()=>{}));
@@ -1382,6 +1383,7 @@ function planGroups(){
   const tk=dayKey(today0()), fut=S.plans.filter(p=>p.date>=tk&&!String(p.id).startsWith("dp"));
   const acts=ACTS(); const isDone=p=>acts.some(a=>a.date.slice(0,10)===p.date&&a.sport===p.sport);
   return [
+    ["dups",t("Doublons (même jour, même sport, même séance)","Duplicates (same day, sport and session)"),findDuplicatePlans()],
     ["prog",t("Séances du programme à venir","Upcoming plan sessions"),fut.filter(p=>p.prog)],
     ["gen",t("Séances proposées automatiquement à venir","Upcoming auto-suggested sessions"),fut.filter(p=>!p.prog&&p.gen)],
     ["manual",t("Séances ajoutées à la main à venir","Upcoming manually added sessions"),fut.filter(p=>!p.prog&&!p.gen)],
@@ -1533,19 +1535,74 @@ function progInfo(d=today0()){
   const w=Math.floor((d-parseDay(PROG_START))/(7*864e5))+1; const row=PROG_WEEKS[Math.min(PROG_N-1,Math.max(0,w-1))];
   return {w,phase:row[1],vol:row[2],key:row[3],days:Math.round((parseDay(PROG_RACE)-d)/864e5)};
 }
-async function progLoad(){
-  const tk=dayKey(today0()); const items=progBuild().filter(p=>p.date>=tk);
-  const dates=new Set(items.map(p=>p.date));
-  const drop=S.plans.filter(p=>p.date>=tk&&(p.prog===PROG_ID||(p.gen&&dates.has(p.date))));
-  for(const p of drop) await delPlan(p.id);
-  for(let i=0;i<items.length;i+=20) await Promise.all(items.slice(i,i+20).map(p=>putPlan({...p,id:"g"+uid()})));
-  S.set.prog=PROG_ID; S.set.progV=PROG_V; S.set.goal=PROG_GOAL; S.set.restDay=5;
-  if(!S.set.context||/^Objectif : battre mon record au semi \(1:20:26, mars 2024\) au Semi de Paris/.test(S.set.context)) S.set.context=PROG_CONTEXT;
-  saveSettings(); render();
-  toast(t(`Programme chargé : ${items.length} séances jusqu'au 21 mars.`,`Plan loaded: ${items.length} sessions until March 21.`));
+/* ---- chargement du programme sans doublons ----
+   Identifiants stables (même séance = même id) : recharger, migrer ou charger depuis deux
+   appareils écrase au lieu de dupliquer. Les séances manuelles en conflit (même jour, même sport)
+   sont gardées ou remplacées selon le choix ; les anciennes séances d'autres programmes sont retirées. */
+function progItems(){
+  const tk=dayKey(today0()), n={};
+  return progBuild().filter(p=>p.date>=tk).map(p=>{ const k=`${p.date}-${p.sport}`; n[k]=(n[k]||0)+1; return {...p,id:`prog-${PROG_ID}-${k}-${n[k]}`}; });
+}
+function progConflicts(items){
+  const tk=dayKey(today0());
+  return S.plans.filter(p=>p.date>=tk&&!p.prog&&!p.gen&&!String(p.id).startsWith("dp")&&items.some(i=>i.date===p.date&&i.sport===p.sport));
+}
+async function progLoad(mode){
+  if(S.progLoading) return;
+  const items=progItems();
+  const conflicts=progConflicts(items);
+  if(mode===undefined&&conflicts.length){ openProgConflicts(items,conflicts); return; }
+  S.progLoading=true;
+  try{
+    const tk=dayKey(today0()), dates=new Set(items.map(p=>p.date)), keepIds=new Set(items.map(p=>p.id));
+    let put=items;
+    if(mode==="mine"){ const busy=new Set(conflicts.map(c=>`${c.date}|${c.sport}`)); put=items.filter(i=>!busy.has(`${i.date}|${i.sport}`)); }
+    const putIds=new Set(put.map(p=>p.id));
+    const drop=S.plans.filter(p=>p.date>=tk&&!putIds.has(p.id)&&(
+      p.prog ||
+      (p.gen&&dates.has(p.date)) ||
+      (mode==="replace"&&conflicts.includes(p))));
+    for(let i=0;i<drop.length;i+=20) await Promise.all(drop.slice(i,i+20).map(p=>delPlan(p.id)));
+    for(let i=0;i<put.length;i+=20) await Promise.all(put.slice(i,i+20).map(p=>putPlan(p)));
+    const dups=await removeDuplicatePlans(true);
+    S.set.prog=PROG_ID; S.set.progV=PROG_V; S.set.goal=PROG_GOAL; S.set.restDay=5;
+    if(!S.set.context||/^Objectif : battre mon record au semi \(1:20:26, mars 2024\) au Semi de Paris/.test(S.set.context)) S.set.context=PROG_CONTEXT;
+    saveSettings(); render();
+    const kept=items.length-put.length;
+    toast(t(`Programme chargé : ${put.length} séances jusqu'au ${fmtDate(parseDay(PROG_RACE))}`,`Plan loaded: ${put.length} sessions until ${fmtDate(parseDay(PROG_RACE))}`)+(kept?t(`, ${kept} remplacée(s) par tes séances`,`, ${kept} replaced by your own`):"")+(dups?t(`, ${dups} doublon(s) retiré(s)`,`, ${dups} duplicate(s) removed`):"")+".");
+  } finally { S.progLoading=false; }
+}
+function openProgConflicts(items,conflicts){
+  S.progPending={items,conflicts};
+  sheet(`<h2>${t("Séances déjà prévues","Sessions already planned")}</h2>
+  <p class="muted" style="margin:0">${t(`${conflicts.length} séance(s) ajoutée(s) à la main tombent le même jour et dans le même sport qu'une séance du programme. Pour éviter les doublons, choisis :`,`${conflicts.length} manually added session(s) fall on the same day and sport as a plan session. To avoid duplicates, choose:`)}</p>
+  <div class="mg-list">${conflicts.slice(0,8).map(c=>{ const pr=items.find(i=>i.date===c.date&&i.sport===c.sport); return `<div class="mg-row"><div class="stack" style="gap:2px;min-width:0"><b>${dayName(c.date)} · ${SPORTS[c.sport].l}</b><span class="hint">${t("La tienne","Yours")} : ${esc(c.title)} · ${t("Programme","Plan")} : ${esc(pr?pr.title:"")}</span></div></div>`; }).join("")}${conflicts.length>8?`<div class="mg-row"><span class="hint">+ ${conflicts.length-8}</span></div>`:""}</div>
+  <div class="stack" style="gap:8px">
+    <button class="btn" data-prog-mode="replace">${t("Remplacer par les séances du programme","Replace with the plan sessions")}</button>
+    <button class="btn ghost" data-prog-mode="mine">${t("Garder mes séances ces jours-là","Keep my sessions on those days")}</button>
+    <button class="btn ghost" data-close>${t("Annuler","Cancel")}</button>
+  </div>`);
+}
+/* doublons : même jour, même sport, même titre (ou deux séances de programme le même jour et dans le même sport) */
+function findDuplicatePlans(){
+  const rank=p=>p.prog===PROG_ID?0:(!p.prog&&!p.gen)?1:p.prog?2:3;
+  const list=S.plans.filter(p=>!String(p.id).startsWith("dp")).sort((a,b)=>rank(a)-rank(b)||String(a.id).localeCompare(String(b.id)));
+  const seen=new Set(), progDay=new Set(), dups=[];
+  for(const p of list){
+    const k=`${p.date}|${p.sport}|${norm(p.title||"")}`;
+    if(seen.has(k)){ dups.push(p); continue; }
+    if(p.prog&&p.prog!==PROG_ID&&progDay.has(`${p.date}|${p.sport}`)){ dups.push(p); continue; }
+    seen.add(k); if(p.prog) progDay.add(`${p.date}|${p.sport}`);
+  }
+  return dups;
+}
+async function removeDuplicatePlans(silent){
+  const d=findDuplicatePlans(); if(!d.length) return 0;
+  if(silent){ for(let i=0;i<d.length;i+=20) await Promise.all(d.slice(i,i+20).map(p=>delPlan(p.id))); return d.length; }
+  return delPlansUndoable(d,t(`${d.length} doublon(s) supprimé(s).`,`${d.length} duplicate(s) deleted.`));
 }
 async function progRemove(){
-  const tk=dayKey(today0()); const ps=S.plans.filter(p=>p.prog===PROG_ID&&p.date>=tk);
+  const tk=dayKey(today0()); const ps=S.plans.filter(p=>p.prog&&p.date>=tk);
   for(const p of ps) await delPlan(p.id);
   S.set.prog=null; saveSettings(); render();
   toast(t(`${ps.length} séances du programme retirées.`,`${ps.length} plan sessions removed.`));
@@ -1878,7 +1935,7 @@ function maybeKofi(){
 function render(){
   if(!S.actsReady && !S.timedOut) return;
   applyAutoHr();
-  if(S.set.prog===PROG_ID&&S.set.progV!==PROG_V&&!isDemo()&&!S.progMigrating){ S.progMigrating=true; S.set.progV=PROG_V; progLoad().catch(()=>{S.set.progV=null;}).finally(()=>{S.progMigrating=false;}); }
+  if(S.set.prog===PROG_ID&&S.set.progV!==PROG_V&&!isDemo()&&!S.progMigrating&&(S.mode!=="db"||S.plansSynced)){ S.progMigrating=true; S.set.progV=PROG_V; progLoad("mine").catch(()=>{S.set.progV=null;}).finally(()=>{S.progMigrating=false;}); }
   $("#today-line").textContent = `${DAYS_L()[(today0().getDay()+6)%7]} ${fmtDate(today0())} · ${t("semaine","week")} ${isoWeek(today0())}`;
   $("#demo-banner").innerHTML = isDemo() ? `<div class="banner"><span><b>${t("Données d'exemple.","Sample data.")}</b> ${t("Importe ton export Garmin ou connecte Strava pour voir tes propres séances.","Import your Garmin export or connect Strava to see your own sessions.")}</span><button class="btn small" data-go="acts">${t("Importer","Import")}</button></div>` : "";
   const fl=$("#fb-login"); if(fl) fl.hidden=!(S.fb&&S.fb.state==="out");
@@ -2321,6 +2378,7 @@ document.addEventListener("click",async e=>{
   if(el.dataset.selPlan){ const id=el.dataset.selPlan; S.sel.has(id)?S.sel.delete(id):S.sel.add(id); render(); return; }
   if(el.dataset.mg){ const g=planGroups().find(x=>x[0]===el.dataset.mg); if(!g) return; if(g[0]==="future"&&!el.dataset.confirm){ el.dataset.confirm="1"; el.textContent=t(`Confirmer (${g[2].length})`,`Confirm (${g[2].length})`); el.classList.add("danger"); return; }
     closeSheet(); await delPlansUndoable(g[2],t(`${g[2].length} séance(s) supprimée(s) : ${g[1].toLowerCase()}.`,`${g[2].length} session(s) deleted: ${g[1].toLowerCase()}.`)); render(); return; }
+  if(el.dataset.progMode){ const m=el.dataset.progMode; closeSheet(); try{ await progLoad(m); }catch(err){ toast(t("Chargement interrompu : réessaie.","Loading interrupted: try again.")); render(); } return; }
   if(el.dataset.shift){ const p=S.editingPlan; if(!p) return; closeSheet(); await shiftPlans([p],+el.dataset.shift); render(); return; }
   if(el.dataset.range){ const k=el.dataset.range; S.range = k==="custom" ? {k,from:S.range.from||dayKey(addDays(today0(),-90)),to:S.range.to||dayKey(today0())} : {k}; saveRange(); render(); return; }
   if(el.dataset.ask){ askCoach(el.dataset.ask); return; }
@@ -2372,7 +2430,7 @@ document.addEventListener("click",async e=>{
       if(!list.length){ toast(t("Aucune séance dans cette période.","No sessions in this range.")); break; }
       closeSheet(); await delPlansUndoable(list,t(`${list.length} séance(s) supprimée(s) du ${fmtDate(parseDay(a))} au ${fmtDate(parseDay(b))}.`,`${list.length} session(s) deleted from ${fmtDate(parseDay(a))} to ${fmtDate(parseDay(b))}.`)); render(); break; }
     case "gen-week": el.disabled=true; await genWeek(S.weekOff); el.disabled=false; break;
-    case "prog-load": el.disabled=true; el.textContent=t("Chargement…","Loading…"); try{ await progLoad(); }catch(err){ toast(t("Chargement interrompu : réessaie.","Loading interrupted: try again.")); render(); } break;
+    case "prog-load": el.disabled=true; el.textContent=t("Chargement…","Loading…"); try{ await progLoad(); }catch(err){ toast(t("Chargement interrompu : réessaie.","Loading interrupted: try again.")); } render(); break;
     case "prog-remove": if(!el.dataset.confirm){ el.dataset.confirm="1"; el.textContent=t("Confirmer le retrait","Confirm removal"); el.classList.add("danger"); break; } el.disabled=true; await progRemove(); break;
     case "ctx-default": S.set.context=PROG_CONTEXT; saveSettings(); render(); toast(t("Contexte du programme remis.","Plan context restored.")); break;
     case "coach-gen": { el.disabled=true; const off=((today0().getDay()+6)%7)>=5?1:0; const n=await genWeek(off); if(n){ S.weekOff=off; S.tab="plan"; render(); } else el.disabled=false; break; }
