@@ -1458,7 +1458,7 @@ function applyTargets(tg){
 }
 
 /* ============ programme semi-marathon ============ */
-const PROG_ID="semi2027", PROG_V=2, PROG_START="2026-11-09", PROG_RACE="2027-03-21", PROG_RACE_NAME="Semi Boucle de Seine";
+const PROG_ID="semi2027", PROG_V=3, PROG_START="2026-11-09", PROG_RACE="2027-03-21", PROG_RACE_NAME="Semi Boucle de Seine";
 const PROG_GOAL="Semi-marathon sous 1:20:26 (record) au Semi Boucle de Seine (Chatou), dimanche 21 mars 2027 — cible 1:19:59 (3:47/km)";
 const PROG_CONTEXT=`Objectif : battre mon record au semi (1:20:26, mars 2024) au Semi-Marathon Boucle de Seine (départ île des Impressionnistes, Chatou), dimanche 21 mars 2027 à 9h. Parcours route roulant, 59 m D+. Cible 1:19:59 (3:47/km). Pas de dossard au Semi de Paris.
 Records : 10 km 36:45 (2024), semi 1:20:26, marathon 2:50:21. Dernière course : Paris-Versailles 16 km à 4:12/km (sept. 2026).
@@ -1467,7 +1467,7 @@ Profil : 31 ans, 65 kg, triathlète (vélo, natation), muscu 2×/semaine, calist
 
 Plan de 19 semaines à partir du lundi 9 nov. 2026 : Fondation (9 nov.–6 déc.), Développement (7 déc.–17 janv.), Test 10 km (dimanche 24 janv.), Spécifique (25 janv.–7 mars), Affûtage (8–21 mars). Volume de 35 km à 55–60 km/semaine, une semaine allégée toutes les 3–4 semaines.
 
-Semaine type : lundi muscu A haut du corps + natation EF ; mardi SÉANCE CLÉ course ; mercredi footing EF + vélo endurance ; jeudi muscu B full body (jambes lourdes autorisées) + natation facile ; vendredi footing EF + 6 lignes droites de 20 s (récup 60–90 s de marche) ; samedi REPOS COMPLET ; dimanche SORTIE LONGUE.
+Semaine type : lundi muscu A haut du corps + vélo très facile ; mardi cours de natation le matin + SÉANCE CLÉ course le soir (au moins 6–8 h après) ; mercredi footing EF + vélo endurance ; jeudi muscu B full body (jambes lourdes autorisées) + natation facile ; vendredi footing EF + 6 lignes droites de 20 s (récup 60–90 s de marche) ; samedi REPOS COMPLET ; dimanche SORTIE LONGUE.
 
 Allures : endurance facile 5:20–5:45/km en Z2 (environ sous 150 bpm), cadence 168–172 ; seuil 4:05–4:10/km (nov.–déc.) puis 3:48–3:52/km (févr.–mars) ; allure semi 4:05 puis 3:47/km. Vélo uniquement en endurance (130–145 bpm), 3–4 h/semaine, jamais intense, cardio toujours enregistré.
 
@@ -1502,7 +1502,7 @@ const PROG_N=PROG_WEEKS.length;
 const r5 = x => Math.max(15,Math.round(x/5)*5);
 function progBuild(){
   const out=[], mon0=parseDay(PROG_START);
-  const P=(d,sport,title,dur,int,notes,zone=null)=>out.push({date:dayKey(d),time:S.set.defTime||"18:00",sport,title,dur:r5(dur),int,notes,zone,prog:PROG_ID,gen:false});
+  const P=(d,sport,title,dur,int,notes,zone=null,time=null)=>out.push({date:dayKey(d),time:time||S.set.defTime||"18:00",sport,title,dur:r5(dur),int,notes,zone,prog:PROG_ID,gen:false});
   for(const [w,phase,vol,key,keyKm,lng,lngKm,wedKm,friKm,kz] of PROG_WEEKS){
     const mon=addDays(mon0,(w-1)*7), d=i=>addDays(mon,i);
     const head=`Programme semi — semaine ${w}/${PROG_N} (${phase}, ≈ ${vol} km de course).`;
@@ -1510,8 +1510,9 @@ function progBuild(){
     const bike=taper?45:spec?75:90;
     if(phase!=="Course"){
       P(d(0),"renfo",taper?"Muscu A — légère (affûtage)":"Muscu A — haut du corps",taper?40:60,taper?"facile":"modere",`${head} Tractions, dips, développés, rowing + gainage. Jambes légères seulement : pas de squat ni de soulevé de terre lourd (séance clé demain).`);
-      P(d(0),"natation","Natation EF",35,"facile",`${head} Nage tranquille, technique.`,"1-2");
-      P(d(1),"course",`Séance clé — ${key}`,keyKm*5.2,"intense",`${head} 15–20 min EF d'échauffement, puis ${key}, puis 10 min de retour au calme. ≈ ${keyKm} km au total. Échauffement et récupérations en Z1–Z2.`,kz);
+      P(d(0),"velo","Vélo très facile",taper?30:45,"facile",`${head} Après la muscu ou à un autre moment, pour faire tourner les jambes.`,"1-2");
+      P(d(1),"natation","Cours de natation",60,"modere",`${head} Séance clé de course ce soir : évite les séries de battements de jambes à fond. Repas avec féculents le midi.`,"2-3","08:00");
+      P(d(1),"course",`Séance clé — ${key}`,keyKm*5.2,"intense",`${head} 15–20 min EF d'échauffement, puis ${key}, puis 10 min de retour au calme. ≈ ${keyKm} km au total. Échauffement et récupérations en Z1–Z2. Collation 1h–1h30 avant. Si le cours de natation t'a vidé, inverse avec le footing de mercredi.`,kz,"18:30");
       P(d(2),"course",`Footing EF ${wedKm} km`,wedKm*5.6,"facile",`${head} 5:20–5:45/km, cadence 168–172.`,"2");
       if(bike) P(d(2),"velo","Vélo endurance",bike,"facile",`${head} Pédalage souple, sans côtes appuyées.`,"1-2");
       if(!taper){ P(d(3),"renfo","Muscu B — full body",60,"modere",`${head} Squat, soulevé de terre roumain, fentes, tirage, développé. Jambes lourdes autorisées.`);
@@ -1519,12 +1520,12 @@ function progBuild(){
       P(d(4),"course",`Footing EF ${friKm} km + 6 lignes droites`,friKm*5.6+6,"facile",`${head} Lignes droites : 20 s rapides et relâchées, puis 60–90 s de marche.`,"2");
       P(d(6),"course",lng,lngKm*5.9,test?"intense":/dont|derniers/.test(lng)?"modere":"facile",`${head} ${test?"Le résultat fixe l'objectif final du semi.":"Au-delà de 1h15 : 1 gel toutes les 40–45 min + eau."}`,test?"4-5":/dont|derniers/.test(lng)?"2+4":"2");
     } else {
-      P(d(0),"natation","Natation très facile",30,"facile",`${head} Semaine de course : on garde de la fraîcheur.`,"1-2");
+      P(d(1),"natation","Cours de natation (léger)",45,"facile",`${head} Semaine de course : nage en souplesse, sans forcer.`,"1-2","08:00");
       P(d(1),"course",`Rappel — ${key}`,keyKm*5.2,"modere",`${head} 15 min EF, ${key}, 10 min de retour au calme.`,"2+4");
       P(d(2),"course","Footing EF 6 km",6*5.6,"facile",`${head} Très tranquille.`,"2");
       P(d(3),"course","Footing 6 km + lignes droites",6*5.6+5,"facile",`${head} 4–6 lignes droites relâchées.`,"2");
       P(d(5),"course","Déblocage 4 km + 4 accélérations",25,"facile",`${head} Veille de course : court et facile. Dossard à retirer vendredi ou samedi (aucun retrait le dimanche, licence ou PPS validé obligatoire).`,"1-2");
-      P(d(6),"course",lng,85,"intense",`${head} Gels vers le km 8 et le km 15. Échauffement 10 min + 3 lignes droites.`,"4");
+      P(d(6),"course",lng,85,"intense",`${head} Gels vers le km 8 et le km 15. Échauffement 10 min + 3 lignes droites. Départ 9h, île des Impressionnistes (Chatou).`,"4","09:00");
     }
   }
   return out;
