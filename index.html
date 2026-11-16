@@ -192,6 +192,19 @@ a.btn{text-decoration:none;display:inline-flex;align-items:center;gap:6px}
 .rg-dates .f{flex:1;min-width:130px;display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted)}
 .rg-dates input{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:7px 9px;color:var(--ink);width:100%}
 .rangecard{position:sticky;top:calc(env(safe-area-inset-top,0px) + 50px);z-index:5}
+body:has(.selbar) .toast{bottom:calc(120px + env(safe-area-inset-bottom,0px))}
+.toast.act{display:flex;align-items:center;gap:12px;pointer-events:auto}
+.toast-btn{background:transparent;border:1px solid currentColor;color:inherit;border-radius:8px;padding:4px 10px;font-weight:600;cursor:pointer}
+.item.selectable{outline:1px dashed var(--line)}
+.item.selected{outline:2px solid var(--ink);background:color-mix(in srgb,var(--c) 14%,var(--soft))}
+.tick{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;border:1.5px solid var(--muted);margin-right:6px;font-size:12px;vertical-align:-3px}
+.item.selected .tick{background:var(--ink);border-color:var(--ink);color:var(--card)}
+.selbar{position:sticky;bottom:calc(10px + env(safe-area-inset-bottom,0px));z-index:15;display:flex;flex-wrap:wrap;gap:6px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;box-shadow:0 6px 24px rgba(0,0,0,.18)}
+.selbar .seln{font-weight:600;font-size:14px;margin-right:auto}
+.mg-list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.mg-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.mg-row:last-child{border-bottom:0}
+.danger-ghost{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,var(--line))}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--btn);color:var(--btn-ink);padding:10px 16px;border-radius:10px;font-size:14px;z-index:60;max-width:calc(100% - 32px)}
 .empty{padding:18px;text-align:center;color:var(--muted);font-size:14px}
@@ -294,7 +307,11 @@ function paceStr(sport,a){
   if(sport==="velo"||sport==="autre"){ return `${(a.dist/(a.dur/3600)).toFixed(1).replace(".",DEC())} km/h`; }
   return null;
 }
-function toast(msg){ const t=document.createElement("div"); t.className="toast"; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),2800); }
+function toast(msg,action,fn){
+  document.querySelectorAll(".toast.act").forEach(x=>x.remove());
+  const el=document.createElement("div"); el.className="toast"+(action?" act":""); const sp=document.createElement("span"); sp.textContent=msg; el.appendChild(sp);
+  if(action){ const b=document.createElement("button"); b.className="toast-btn"; b.textContent=action; b.onclick=()=>{ el.remove(); fn&&fn(); }; el.appendChild(b); }
+  document.body.appendChild(el); setTimeout(()=>el.remove(),action?7000:2800); }
 function lsGet(){ try{ return JSON.parse(localStorage.getItem("carnet-forme-v1")||"null"); }catch(e){ return null; } }
 function lsSet(){ try{ localStorage.setItem("carnet-forme-v1",JSON.stringify({acts:S.acts,plans:S.plans,set:S.set})); }catch(e){} }
 
@@ -1345,6 +1362,58 @@ function analyzeWeek(acts,plans){
   return {st,m,lines,verdict,cur,remaining,missed,hardN,h};
 }
 
+/* ---- gestion rapide des séances planifiées (suppression annulable, sélection, ménage) ---- */
+async function delPlansUndoable(list,msg){
+  list=list.filter(p=>!String(p.id).startsWith("dp")); if(!list.length) return 0;
+  const backup=list.map(p=>({...p}));
+  for(let i=0;i<list.length;i+=20) await Promise.all(list.slice(i,i+20).map(p=>delPlan(p.id)));
+  toast(msg||t(`${list.length} séance(s) supprimée(s).`,`${list.length} session(s) deleted.`),t("Annuler","Undo"),async()=>{
+    for(let i=0;i<backup.length;i+=20) await Promise.all(backup.slice(i,i+20).map(p=>putPlan(p)));
+    toast(t(`${backup.length} séance(s) restaurée(s).`,`${backup.length} session(s) restored.`)); });
+  return list.length;
+}
+async function shiftPlans(list,days){
+  list=list.filter(p=>!String(p.id).startsWith("dp")); if(!list.length) return;
+  const backup=list.map(p=>({...p}));
+  for(const p of list) await putPlan({...p,date:dayKey(addDays(parseDay(p.date),days)),gen:false});
+  toast(t(`${list.length} séance(s) décalée(s) de ${days>0?"+":""}${days} j.`,`${list.length} session(s) moved ${days>0?"+":""}${days} d.`),t("Annuler","Undo"),async()=>{ for(const p of backup) await putPlan(p); });
+}
+function planGroups(){
+  const tk=dayKey(today0()), fut=S.plans.filter(p=>p.date>=tk&&!String(p.id).startsWith("dp"));
+  const acts=ACTS(); const isDone=p=>acts.some(a=>a.date.slice(0,10)===p.date&&a.sport===p.sport);
+  return [
+    ["prog",t("Séances du programme à venir","Upcoming plan sessions"),fut.filter(p=>p.prog)],
+    ["gen",t("Séances proposées automatiquement à venir","Upcoming auto-suggested sessions"),fut.filter(p=>!p.prog&&p.gen)],
+    ["manual",t("Séances ajoutées à la main à venir","Upcoming manually added sessions"),fut.filter(p=>!p.prog&&!p.gen)],
+    ["missed",t("Séances passées non faites","Past sessions not done"),S.plans.filter(p=>p.date<tk&&!isDone(p)&&!String(p.id).startsWith("dp"))],
+    ["future",t("Toutes les séances à venir","All upcoming sessions"),fut]
+  ];
+}
+function openManage(){
+  const g=planGroups(), td=today0();
+  sheet(`<h2>${t("Gérer le planning","Manage the plan")}</h2>
+  <p class="hint" style="margin:0">${t("Pratique quand ton programme change : supprime d'un coup les séances qui ne correspondent plus. Chaque action peut être annulée pendant quelques secondes.","Handy when your plan changes: delete the sessions that no longer fit in one go. Each action can be undone for a few seconds.")}</p>
+  <div class="mg-list">${g.map(([k,l,xs])=>`<div class="mg-row"><div class="stack" style="gap:2px;min-width:0"><b>${l}</b><span class="hint">${xs.length?t(`${xs.length} séance(s)`,`${xs.length} session(s)`)+(xs.length?` · ${fmtDate(parseDay(xs.map(p=>p.date).sort()[0]))} → ${fmtDate(parseDay(xs.map(p=>p.date).sort().pop()))}`:""):t("aucune","none")}</span></div><button class="btn small ghost${k==="future"?" danger-ghost":""}" data-mg="${k}" ${xs.length?"":"disabled"}>${t("Supprimer","Delete")}</button></div>`).join("")}</div>
+  <div class="stack" style="gap:8px"><b>${t("Vider une période","Clear a date range")}</b>
+    <div class="row rg-dates"><label class="f"><span>${t("Du","From")}</span><input type="date" id="mg-from" value="${dayKey(td)}"></label><label class="f"><span>${t("Au","To")}</span><input type="date" id="mg-to" value="${dayKey(addDays(td,6))}"></label></div>
+    <label class="check"><input type="checkbox" id="mg-keep-manual"> ${t("Garder les séances ajoutées à la main","Keep manually added sessions")}</label>
+    <div class="row"><button class="btn small" id="mg-range">${t("Supprimer les séances de cette période","Delete sessions in this range")}</button></div>
+  </div>
+  <div class="row" style="justify-content:flex-end"><button class="btn ghost" data-close>${t("Fermer","Close")}</button></div>`);
+}
+function selBar(){
+  if(!S.sel) return "";
+  const n=S.sel.size;
+  return `<div class="selbar" role="toolbar" aria-label="${t("Actions sur la sélection","Selection actions")}">
+    <span class="seln">${t(`${n} sélectionnée(s)`,`${n} selected`)}</span>
+    <button class="btn small ghost" id="sel-week">${t("Toute la semaine","Whole week")}</button>
+    <button class="btn small ghost" id="sel-prev" ${n?"":"disabled"}>−1 ${t("j","d")}</button>
+    <button class="btn small ghost" id="sel-next" ${n?"":"disabled"}>+1 ${t("j","d")}</button>
+    <button class="btn small danger" id="sel-del" ${n?"":"disabled"}>${t("Supprimer","Delete")}</button>
+    <button class="btn small" id="sel-done">${t("Terminé","Done")}</button>
+  </div>`;
+}
+
 async function genWeek(off){
   const mon=addDays(startOfWeek(today0()),off*7); const keys=[0,1,2,3,4,5,6].map(i=>dayKey(addDays(mon,i)));
   if(S.plans.some(p=>p.prog&&keys.includes(p.date))){ toast(t("Cette semaine suit ton programme semi : modifie directement les séances.","This week follows your half-marathon plan: edit the sessions directly.")); return 0; }
@@ -1901,7 +1970,8 @@ function planStatus(p,acts){
 }
 function planItem(p){
   const [c,l]=planStatus(p,ACTS()); const d=parseDay(p.date);
-  return `<button class="item" style="--c:${sc(p.sport)}" data-edit-plan="${p.id}"><span class="it">${esc(p.title)}</span><span class="im"><span>${DAYS()[(d.getDay()+6)%7]} ${d.getDate()}${p.time?` · ${p.time}`:""}</span><span>${p.dur} min</span><span>${INT()[p.int]||""}</span>${planZone(p)?`<span class="zone">♥ ${esc(zoneTxt(planZone(p)))}</span>`:""}<span class="pill ${c}">${l}</span></span></button>`;
+  const selMode=!!S.sel&&S.tab==="plan", on=selMode&&S.sel.has(p.id);
+  return `<button class="item${selMode?" selectable":""}${on?" selected":""}" style="--c:${sc(p.sport)}" ${selMode?`data-sel-plan="${p.id}" aria-pressed="${on}"`:`data-edit-plan="${p.id}"`}><span class="it">${selMode?`<span class="tick" aria-hidden="true">${on?"✓":""}</span>`:""}${esc(p.title)}</span><span class="im"><span>${DAYS()[(d.getDay()+6)%7]} ${d.getDate()}${p.time?` · ${p.time}`:""}</span><span>${p.dur} min</span><span>${INT()[p.int]||""}</span>${planZone(p)?`<span class="zone">♥ ${esc(zoneTxt(planZone(p)))}</span>`:""}<span class="pill ${c}">${l}</span></span></button>`;
 }
 function viewPlan(){
   const acts=ACTS(), plans=PLANS(); const mon=addDays(startOfWeek(today0()),S.weekOff*7); const tk=dayKey(today0());
@@ -1922,11 +1992,13 @@ function viewPlan(){
   return `<div class="stack">
     <div class="row between">
       <div class="weeknav"><button class="btn small ghost" data-week="-1" aria-label="${t("Semaine précédente","Previous week")}">←</button><div><h2>${label}</h2><div class="muted" style="font-size:13px">${fmtDate(mon)} – ${fmtDate(addDays(mon,6))} · ${t("prévu","planned")} ${String(Math.round(totPlan/60*10)/10).replace(".",DEC())} h · ${t("réalisé","done")} ${fmtH(totDone*60)} h</div></div><button class="btn small ghost" data-week="1" aria-label="${t("Semaine suivante","Next week")}">→</button></div>
-      <div class="row"><button class="btn small ghost" id="ics-week">📅 ${t("Ajouter au calendrier","Add to calendar")}</button><button class="btn small ghost" id="clear-week">${t("Vider la semaine","Clear week")}</button><button class="btn small" id="gen-week">${t("Proposer ma semaine","Suggest my week")}</button></div>
+      <div class="row"><button class="btn small ghost" id="sel-start" aria-pressed="${!!S.sel}">☑ ${t("Sélectionner","Select")}</button><button class="btn small ghost" id="manage-plan">🧹 ${t("Gérer le planning","Manage plan")}</button><button class="btn small ghost" id="ics-week">📅 ${t("Calendrier","Calendar")}</button><button class="btn small ghost" id="clear-week">${t("Vider la semaine","Clear week")}</button><button class="btn small" id="gen-week">${t("Proposer ma semaine","Suggest my week")}</button></div>
     </div>
     <p class="hint" style="margin:0">${t(`« Proposer ma semaine » répartit tes sports selon tes 4 dernières semaines, avec un jour de repos (${DAYS_L()[S.set.restDay??0]}), une séance intense par sport d'endurance et la sortie longue le week-end. La charge baisse automatiquement si tu es fatigué.`,`“Suggest my week” spreads your sports based on your last 4 weeks, with a rest day (${DAYS_L()[S.set.restDay??0]}), one hard session per endurance sport and the long session at the weekend. Load drops automatically when you're fatigued.`)}</p>
     ${(()=>{ const I=progInfo(addDays(mon,3)); return I?`<div class="banner"><span><b>${t(`Programme semi — semaine ${I.w}/${PROG_N} · ${I.phase}`,`Half-marathon plan — week ${I.w}/${PROG_N} · ${I.phase}`)}</b> ${t(`≈ ${I.vol} km de course · séance clé : ${esc(I.key)}`,`≈ ${I.vol} km running · key session: ${esc(I.key)}`)}</span></div>`:""; })()}
+    ${S.sel?`<p class="hint" style="margin:0">${t("Touche les séances à sélectionner, puis choisis une action en bas de l'écran.","Tap sessions to select them, then pick an action at the bottom of the screen.")}</p>`:""}
     <div class="days">${cols}</div>
+    ${selBar()}
   </div>`;
 }
 function viewActs(){
@@ -2180,14 +2252,26 @@ function openPlan(p,dateK){
     <div class="f"><label for="p-int">${t("Intensité","Intensity")}</label><select id="p-int">${Object.entries(INT()).map(([k,l])=>`<option value="${k}" ${k===p.int?"selected":""}>${l}</option>`).join("")}</select></div>
     <div class="f full"><label for="p-notes">Notes</label><textarea id="p-notes">${esc(p.notes||"")}</textarea></div>
   </div>
+  ${isNew?"":`<div class="row"><button type="button" class="btn small ghost" data-shift="-1">← ${t("Veille","Day before")}</button><button type="button" class="btn small ghost" data-shift="1">${t("Lendemain","Day after")} →</button></div>`}
+  ${!isNew&&similarPlans(p).length?`<label class="check"><input type="checkbox" id="p-series"> ${t(`Appliquer l'heure, la durée et l'intensité aux ${similarPlans(p).length} séance(s) similaire(s) à venir (même sport, même jour de la semaine${p.prog?", programme":""})`,`Apply time, duration and intensity to the ${similarPlans(p).length} similar upcoming session(s) (same sport, same weekday${p.prog?", plan":""})`)}</label>`:""}
   <p class="hint" style="margin:0">${t("La séance passe en « Fait » dès qu'une activité du même sport est importée ce jour-là.","The session turns “Done” as soon as an activity of the same sport is imported that day.")}</p>
-  <div class="row between">${isNew?"<span></span>":`<button type="button" class="btn small ghost" id="p-del" data-id="${p.id}">${t("Supprimer","Delete")}</button>`}<div class="row"><button type="button" class="btn ghost" data-close>${t("Annuler","Cancel")}</button><button class="btn" type="submit">${t("Enregistrer","Save")}</button></div></div>
+  <div class="row between">${isNew?"<span></span>":`<button type="button" class="btn small ghost danger-ghost" id="p-del" data-id="${p.id}">🗑 ${t("Supprimer","Delete")}</button>`}<div class="row"><button type="button" class="btn ghost" data-close>${t("Annuler","Cancel")}</button><button class="btn" type="submit">${t("Enregistrer","Save")}</button></div></div>
   </form>`);
   $("#plan-form").addEventListener("submit",async e=>{
     e.preventDefault(); const sp=$("#p-sport").value;
     const obj={...p,id:(p.id&&!String(p.id).startsWith("dp"))?p.id:"p"+uid(),title:$("#p-title").value.trim()||SPORTS[sp].l,sport:sp,date:$("#p-date").value,time:$("#p-time").value||"",dur:parseInt($("#p-dur").value)||45,int:$("#p-int").value,notes:$("#p-notes").value.trim(),gen:false};
-    try{ await putPlan(obj); closeSheet(); toast(t("Séance planifiée.","Session planned.")); }catch(err){ toast(t("Enregistrement impossible : réessaie.","Couldn't save: try again.")); }
+    try{
+      await putPlan(obj);
+      if(!isNew&&$("#p-series")?.checked){ const sim=similarPlans(p); for(const x of sim) await putPlan({...x,time:obj.time,dur:obj.dur,int:obj.int}); closeSheet(); toast(t(`Séance et ${sim.length} séance(s) similaire(s) mises à jour.`,`Session and ${sim.length} similar session(s) updated.`)); }
+      else { closeSheet(); toast(t("Séance planifiée.","Session planned.")); }
+    }catch(err){ toast(t("Enregistrement impossible : réessaie.","Couldn't save: try again.")); }
   });
+  S.editingPlan=isNew?null:p;
+}
+function similarPlans(p){
+  if(!p||!p.date) return [];
+  const wd=parseDay(p.date).getDay();
+  return S.plans.filter(x=>x.id!==p.id&&x.date>p.date&&x.sport===p.sport&&parseDay(x.date).getDay()===wd&&!!x.prog===!!p.prog&&!String(x.id).startsWith("dp"));
 }
 
 /* ============ coach IA ============ */
@@ -2227,13 +2311,17 @@ document.addEventListener("click",async e=>{
   const el=e.target.closest("button,[data-close],#sheet-bg,#kofi-go"); if(!el) return;
   if(el.id==="sheet-bg"&&e.target===el) return closeSheet();
   if(el.dataset.close!==undefined) return closeSheet();
-  if(el.dataset.tab){ S.tab=el.dataset.tab; render(); window.scrollTo({top:0}); return; }
+  if(el.dataset.tab){ if(el.dataset.tab!=="plan") S.sel=null; S.tab=el.dataset.tab; render(); window.scrollTo({top:0}); return; }
   if(el.dataset.go){ S.tab=el.dataset.go; render(); window.scrollTo({top:0}); return; }
   if(el.dataset.filter){ S.filter=el.dataset.filter; render(); return; }
   if(el.dataset.week){ S.weekOff+=+el.dataset.week; render(); return; }
   if(el.dataset.editAct){ openAct(S.acts.find(a=>a.id===el.dataset.editAct)); return; }
   if(el.dataset.editPlan){ const p=PLANS().find(x=>x.id===el.dataset.editPlan); if(p) openPlan(p); return; }
   if(el.dataset.addPlan){ openPlan(null,el.dataset.addPlan); return; }
+  if(el.dataset.selPlan){ const id=el.dataset.selPlan; S.sel.has(id)?S.sel.delete(id):S.sel.add(id); render(); return; }
+  if(el.dataset.mg){ const g=planGroups().find(x=>x[0]===el.dataset.mg); if(!g) return; if(g[0]==="future"&&!el.dataset.confirm){ el.dataset.confirm="1"; el.textContent=t(`Confirmer (${g[2].length})`,`Confirm (${g[2].length})`); el.classList.add("danger"); return; }
+    closeSheet(); await delPlansUndoable(g[2],t(`${g[2].length} séance(s) supprimée(s) : ${g[1].toLowerCase()}.`,`${g[2].length} session(s) deleted: ${g[1].toLowerCase()}.`)); render(); return; }
+  if(el.dataset.shift){ const p=S.editingPlan; if(!p) return; closeSheet(); await shiftPlans([p],+el.dataset.shift); render(); return; }
   if(el.dataset.range){ const k=el.dataset.range; S.range = k==="custom" ? {k,from:S.range.from||dayKey(addDays(today0(),-90)),to:S.range.to||dayKey(today0())} : {k}; saveRange(); render(); return; }
   if(el.dataset.ask){ askCoach(el.dataset.ask); return; }
   if(el.id==="kofi-go"){ kofiSave({clicked:Date.now()}); setTimeout(closeSheet,300); return; }
@@ -2271,7 +2359,18 @@ document.addEventListener("click",async e=>{
     case "install-app": case "install-app-2": installApp(); break;
     case "push-test": el.disabled=true; await syncPush(true); fetch("/.netlify/functions/push",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"test",id:pushId(),title:t("Test Forma","Forma test"),body:t("Tout fonctionne : tes rappels arriveront même app fermée.","All good: your reminders will arrive even when the app is closed.")})}).then(r=>toast(r.ok?t("Notification de test envoyée.","Test notification sent."):t("Envoi impossible : réactive les notifications.","Couldn't send: turn notifications on again."))).catch(()=>toast(t("Envoi impossible.","Couldn't send."))).finally(()=>{ el.disabled=false; }); break;
     case "a-del": if(el.dataset.confirm){ await delAct(el.dataset.id); closeSheet(); toast(t("Activité supprimée.","Activity deleted.")); } else { el.dataset.confirm="1"; el.textContent=t("Confirmer la suppression","Confirm delete"); el.classList.add("danger"); } break;
-    case "p-del": if(String(el.dataset.id).startsWith("dp")){ closeSheet(); toast(t("Séance d'exemple : génère ta propre semaine.","Sample session: generate your own week.")); break; } if(el.dataset.confirm){ await delPlan(el.dataset.id); closeSheet(); toast(t("Séance supprimée.","Session deleted.")); } else { el.dataset.confirm="1"; el.textContent=t("Confirmer la suppression","Confirm delete"); el.classList.add("danger"); } break;
+    case "p-del": { if(String(el.dataset.id).startsWith("dp")){ closeSheet(); toast(t("Séance d'exemple : génère ta propre semaine.","Sample session: generate your own week.")); break; }
+      const pl=S.plans.find(x=>x.id===el.dataset.id); closeSheet(); if(pl) await delPlansUndoable([pl],t(`« ${pl.title} » supprimée.`,`“${pl.title}” deleted.`)); break; }
+    case "sel-start": S.sel=S.sel?null:new Set(); render(); break;
+    case "sel-done": S.sel=null; render(); break;
+    case "sel-week": { const mon=addDays(startOfWeek(today0()),S.weekOff*7); const keys=[0,1,2,3,4,5,6].map(i=>dayKey(addDays(mon,i))); const ids=S.plans.filter(p=>keys.includes(p.date)).map(p=>p.id); const all=ids.every(id=>S.sel.has(id)); ids.forEach(id=>all?S.sel.delete(id):S.sel.add(id)); render(); break; }
+    case "sel-del": { const list=S.plans.filter(p=>S.sel.has(p.id)); S.sel=new Set(); await delPlansUndoable(list); render(); break; }
+    case "sel-prev": case "sel-next": { const list=S.plans.filter(p=>S.sel.has(p.id)); await shiftPlans(list,el.id==="sel-next"?1:-1); render(); break; }
+    case "manage-plan": openManage(); break;
+    case "mg-range": { let a=$("#mg-from").value, b=$("#mg-to").value; if(!a||!b){ toast(t("Choisis deux dates.","Pick two dates.")); break; } if(a>b) [a,b]=[b,a];
+      const keep=$("#mg-keep-manual").checked; const list=S.plans.filter(p=>p.date>=a&&p.date<=b&&!(keep&&!p.prog&&!p.gen));
+      if(!list.length){ toast(t("Aucune séance dans cette période.","No sessions in this range.")); break; }
+      closeSheet(); await delPlansUndoable(list,t(`${list.length} séance(s) supprimée(s) du ${fmtDate(parseDay(a))} au ${fmtDate(parseDay(b))}.`,`${list.length} session(s) deleted from ${fmtDate(parseDay(a))} to ${fmtDate(parseDay(b))}.`)); render(); break; }
     case "gen-week": el.disabled=true; await genWeek(S.weekOff); el.disabled=false; break;
     case "prog-load": el.disabled=true; el.textContent=t("Chargement…","Loading…"); try{ await progLoad(); }catch(err){ toast(t("Chargement interrompu : réessaie.","Loading interrupted: try again.")); render(); } break;
     case "prog-remove": if(!el.dataset.confirm){ el.dataset.confirm="1"; el.textContent=t("Confirmer le retrait","Confirm removal"); el.classList.add("danger"); break; } el.disabled=true; await progRemove(); break;
@@ -2280,8 +2379,7 @@ document.addEventListener("click",async e=>{
     case "clear-week": {
       const mon=addDays(startOfWeek(today0()),S.weekOff*7); const keys=[0,1,2,3,4,5,6].map(i=>dayKey(addDays(mon,i)));
       const ps=S.plans.filter(p=>keys.includes(p.date)); if(!ps.length){ toast(t("Aucune séance planifiée cette semaine.","No sessions planned this week.")); break; }
-      if(!el.dataset.confirm){ el.dataset.confirm="1"; el.textContent=t(`Supprimer ${ps.length} séance(s) ?`,`Delete ${ps.length} session(s)?`); el.classList.add("danger"); break; }
-      for(const p of ps) await delPlan(p.id); toast(t("Semaine vidée.","Week cleared.")); break; }
+      await delPlansUndoable(ps,t(`Semaine vidée : ${ps.length} séance(s) supprimée(s).`,`Week cleared: ${ps.length} session(s) deleted.`)); break; }
     case "wipe": $("#wipe-zone").innerHTML=`<span class="muted">${t(`Supprimer ${S.acts.length} activités et ${S.plans.length} séances ? C'est définitif.`,`Delete ${S.acts.length} activities and ${S.plans.length} sessions? This can't be undone.`)}</span><button class="btn small ghost" id="wipe-no">${t("Annuler","Cancel")}</button><button class="btn small danger" id="wipe-yes">${t("Tout effacer","Delete everything")}</button>`; break;
     case "wipe-no": render(); break;
     case "wipe-yes": { const st=$("#wipe-zone"); st.innerHTML=`<span class="muted">${t("Suppression…","Deleting…")}</span>`; for(const a of [...S.acts]) await delAct(a.id); for(const p of [...S.plans]) await delPlan(p.id); toast(t("Données effacées.","Data deleted.")); render(); break; }
