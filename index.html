@@ -1458,7 +1458,7 @@ function applyTargets(tg){
 }
 
 /* ============ programme semi-marathon ============ */
-const PROG_ID="semi2027", PROG_V=3, PROG_START="2026-11-09", PROG_RACE="2027-03-21", PROG_RACE_NAME="Semi Boucle de Seine";
+const PROG_ID="semi2027", PROG_V=4, PROG_START="2026-11-09", PROG_RACE="2027-03-21", PROG_RACE_NAME="Semi Boucle de Seine";
 const PROG_GOAL="Semi-marathon sous 1:20:26 (record) au Semi Boucle de Seine (Chatou), dimanche 21 mars 2027 — cible 1:19:59 (3:47/km)";
 const PROG_CONTEXT=`Objectif : battre mon record au semi (1:20:26, mars 2024) au Semi-Marathon Boucle de Seine (départ île des Impressionnistes, Chatou), dimanche 21 mars 2027 à 9h. Parcours route roulant, 59 m D+. Cible 1:19:59 (3:47/km). Pas de dossard au Semi de Paris.
 Records : 10 km 36:45 (2024), semi 1:20:26, marathon 2:50:21. Dernière course : Paris-Versailles 16 km à 4:12/km (sept. 2026).
@@ -1469,7 +1469,9 @@ Plan de 19 semaines à partir du lundi 9 nov. 2026 : Fondation (9 nov.–6 déc.
 
 Semaine type : lundi muscu A haut du corps + vélo très facile ; mardi cours de natation le matin + SÉANCE CLÉ course le soir (au moins 6–8 h après) ; mercredi footing EF + vélo endurance ; jeudi muscu B full body (jambes lourdes autorisées) + natation facile ; vendredi footing EF + 6 lignes droites de 20 s (récup 60–90 s de marche) ; samedi REPOS COMPLET ; dimanche SORTIE LONGUE.
 
-Allures : endurance facile 5:20–5:45/km en Z2 (environ sous 150 bpm), cadence 168–172 ; seuil 4:05–4:10/km (nov.–déc.) puis 3:48–3:52/km (févr.–mars) ; allure semi 4:05 puis 3:47/km. Vélo uniquement en endurance (130–145 bpm), 3–4 h/semaine, jamais intense, cardio toujours enregistré.
+Allures : endurance facile 5:20–5:45/km en Z2 (environ sous 150 bpm), cadence 168–172 ; seuil 4:00/km en nov.–déc. (FC sous 179 bpm : ralentir au-delà), puis 3:55 en janv. et 3:48–3:52/km en févr.–mars ; allure semi 4:05 puis 3:47/km. Vélo uniquement en endurance (130–145 bpm), 3–4 h/semaine, jamais intense, cardio toujours enregistré.
+
+Séance du 17 nov. : 3 × 8 min prévus à 4:05–4:10 courus à 3:47–3:52 (FC 181–182, Z5) : trop vite, niveau probablement meilleur que l'estimation, seuil recalé à 4:00. Ne pas transformer les séances au seuil en courses.
 
 Règles : une seule séance dure de course par semaine (mardi) ; pas de muscu jambes lourde ni de vélo intense la veille du mardi ou du dimanche ; ne pas ajouter de petits runs bonus ; alléger si FC repos +5 bpm, jambes lourdes 2 jours de suite ou sommeil perturbé. Le test 10 km du 24 janvier fixe l'objectif final (36:45 ou mieux : record jouable ; 37:00–37:45 : 1:21–1:22:30 ; 37:45–38:30 : 1:22:30–1:24).
 
@@ -1481,11 +1483,11 @@ const PROG_WEEKS=[
  [1,"Fondation",35,"8 × 1 min en côte, récup en descendant au trot",9,"Sortie longue 15 km EF",15,6,5,"5"],
  [2,"Fondation",38,"3 × 8 min au seuil (4:05–4:10/km), récup 2 min",10,"Sortie longue 16 km EF",16,6,6,"4"],
  [3,"Fondation",42,"10 × 400 m en 1:26–1:28, récup 1 min",10,"Sortie longue 17 km EF",17,8,7,"5"],
- [4,"Allégée",32,"2 × 10 min au seuil, récup 3 min",9,"Sortie longue 13 km EF",13,5,5,"4"],
+ [4,"Allégée",32,"2 × 10 min au seuil (4:00/km), récup 3 min",9,"Sortie longue 13 km EF",13,5,5,"4"],
  [5,"Développement",45,"6 × 1000 m en 3:40, récup 2 min",11,"Sortie longue 18 km, les 4 derniers à 4:15",18,8,8,"4-5"],
- [6,"Développement",48,"3 × 10 min au seuil (4:00–4:05/km), récup 2 min",12,"Sortie longue 19 km EF",19,9,8,"4"],
+ [6,"Développement",48,"3 × 10 min au seuil (3:57–4:00/km), récup 2 min",12,"Sortie longue 19 km EF",19,9,8,"4"],
  [7,"Développement",45,"12 × 400 m en 1:24–1:26, récup 1 min",11,"Sortie longue 18 km EF",18,8,8,"5"],
- [8,"Allégée",36,"20 min continu à 4:05/km",10,"Sortie longue 14 km EF",14,6,6,"4"],
+ [8,"Allégée",36,"20 min continu au seuil (4:00/km)",10,"Sortie longue 14 km EF",14,6,6,"4"],
  [9,"Développement",50,"5 × 1600 m en 3:45, récup 2 min",13,"Sortie longue 20 km dont 3 × 3 km à 4:00",20,9,8,"4-5"],
  [10,"Développement",52,"4 × 2000 m en 3:48, récup 2 min",13,"Sortie longue 20 km dont 2 × 5 km à 4:00",20,10,9,"4"],
  [11,"Test",44,"6 × 300 m vifs, récup 1:30 (rappel)",8,"TEST 10 km à fond (course ou seul) + échauffement",15,11,10,"5"],
@@ -1512,7 +1514,7 @@ function progBuild(){
       P(d(0),"renfo",taper?"Muscu A — légère (affûtage)":"Muscu A — haut du corps",taper?40:60,taper?"facile":"modere",`${head} Tractions, dips, développés, rowing + gainage. Jambes légères seulement : pas de squat ni de soulevé de terre lourd (séance clé demain).`);
       P(d(0),"velo","Vélo très facile",taper?30:45,"facile",`${head} Après la muscu ou à un autre moment, pour faire tourner les jambes.`,"1-2");
       P(d(1),"natation","Cours de natation",60,"modere",`${head} Séance clé de course ce soir : évite les séries de battements de jambes à fond. Repas avec féculents le midi.`,"2-3","08:00");
-      P(d(1),"course",`Séance clé — ${key}`,keyKm*5.2,"intense",`${head} 15–20 min EF d'échauffement, puis ${key}, puis 10 min de retour au calme. ≈ ${keyKm} km au total. Échauffement et récupérations en Z1–Z2. Collation 1h–1h30 avant. Si le cours de natation t'a vidé, inverse avec le footing de mercredi.`,kz,"18:30");
+      P(d(1),"course",`Séance clé — ${key}`,keyKm*5.2,"intense",`${head} 15–20 min EF d'échauffement, puis ${key}, puis 10 min de retour au calme. ≈ ${keyKm} km au total. Échauffement et récupérations en Z1–Z2.${kz==="4"?" Seuil : reste en Z4, ralentis si tu passes en Z5.":""} Collation 1h–1h30 avant. Si le cours de natation t'a vidé, inverse avec le footing de mercredi.`,kz,"18:30");
       P(d(2),"course",`Footing EF ${wedKm} km`,wedKm*5.6,"facile",`${head} 5:20–5:45/km, cadence 168–172.`,"2");
       if(bike) P(d(2),"velo","Vélo endurance",bike,"facile",`${head} Pédalage souple, sans côtes appuyées.`,"1-2");
       if(!taper){ P(d(3),"renfo","Muscu B — full body",60,"modere",`${head} Squat, soulevé de terre roumain, fentes, tirage, développé. Jambes lourdes autorisées.`);
