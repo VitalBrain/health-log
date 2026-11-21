@@ -1458,7 +1458,7 @@ function applyTargets(tg){
 }
 
 /* ============ programme semi-marathon ============ */
-const PROG_ID="semi2027", PROG_V=4, PROG_START="2026-11-09", PROG_RACE="2027-03-21", PROG_RACE_NAME="Semi Boucle de Seine";
+const PROG_ID="semi2027", PROG_V=5, PROG_START="2026-11-09", PROG_RACE="2027-03-21", PROG_RACE_NAME="Semi Boucle de Seine";
 const PROG_GOAL="Semi-marathon sous 1:20:26 (record) au Semi Boucle de Seine (Chatou), dimanche 21 mars 2027 — cible 1:19:59 (3:47/km)";
 const PROG_CONTEXT=`Objectif : battre mon record au semi (1:20:26, mars 2024) au Semi-Marathon Boucle de Seine (départ île des Impressionnistes, Chatou), dimanche 21 mars 2027 à 9h. Parcours route roulant, 59 m D+. Cible 1:19:59 (3:47/km). Pas de dossard au Semi de Paris.
 Records : 10 km 36:45 (2024), semi 1:20:26, marathon 2:50:21. Dernière course : Paris-Versailles 16 km à 4:12/km (sept. 2026).
@@ -1474,6 +1474,8 @@ Allures : endurance facile 5:20–5:45/km en Z2 (environ sous 150 bpm), cadence 
 Séance du 17 nov. : 3 × 8 min prévus à 4:05–4:10 courus à 3:47–3:52 (FC 181–182, Z5) : trop vite, niveau probablement meilleur que l'estimation, seuil recalé à 4:00. Ne pas transformer les séances au seuil en courses.
 
 Règles : une seule séance dure de course par semaine (mardi) ; pas de muscu jambes lourde ni de vélo intense la veille du mardi ou du dimanche ; ne pas ajouter de petits runs bonus ; alléger si FC repos +5 bpm, jambes lourdes 2 jours de suite ou sommeil perturbé. Le test 10 km du 24 janvier fixe l'objectif final (36:45 ou mieux : record jouable ; 37:00–37:45 : 1:21–1:22:30 ; 37:45–38:30 : 1:22:30–1:24).
+
+Triathlon court le dimanche 6 décembre 2026 (en partie indoor, piscine Annette-Kellermann, Paris 13e) : 400 m natation / 10 km vélo / 2,5 km course. Il remplace la sortie longue de la semaine 4 ; enchaînements vélo-course le mercredi 25 nov. et le mercredi 2 déc. ; course à pied vers 3:35–3:40/km.
 
 Après le semi : envie du Trail des Forts de Besançon (7–9 mai 2027), plutôt sur le 42 km. Rien de spécifique trail avant le 21 mars, à part des sorties vallonnées en Z2.
 
@@ -1530,6 +1532,35 @@ function progBuild(){
       P(d(6),"course",lng,85,"intense",`${head} Gels vers le km 8 et le km 15. Échauffement 10 min + 3 lignes droites. Départ 9h, île des Impressionnistes (Chatou).`,"4","09:00");
     }
   }
+  return progOverrides(out);
+}
+// Ajustements ponctuels : triathlon court du 6 décembre 2026 et sa préparation
+function progOverrides(out){
+  const T=(date,sport,title,dur,int,notes,zone=null,time=null)=>({date,time:time||S.set.defTime||"18:00",sport,title,dur,int,notes:"Triathlon du 6 déc. — "+notes,zone,prog:PROG_ID,gen:false});
+  const drop=(date,re)=>{ for(let i=out.length-1;i>=0;i--) if(out[i].date===date&&re.test(out[i].sport+" "+out[i].title)) out.splice(i,1); };
+  const note=(date,re,txt)=>out.filter(p=>p.date===date&&re.test(p.sport+" "+p.title)).forEach(p=>p.notes+=" "+txt);
+  // Semaine 3
+  drop("2026-11-25",/^(course|velo) /);
+  out.push(T("2026-11-25","velo","Enchaînement 1/2 — vélo 45 min Z2",45,"facile","Vélo en endurance, puis course tout de suite après.","2"));
+  out.push(T("2026-11-25","course","Enchaînement 2/2 — course 15 min facile",15,"facile","Juste après le vélo : apprendre à courir avec des jambes de cycliste.","2"));
+  note("2026-11-26",/^natation /,"Inclure un 400 m chronométré pour connaître ton allure triathlon.");
+  // Semaine 4
+  out.filter(p=>p.date==="2026-11-30"&&p.sport==="velo").forEach(p=>p.dur=30);
+  out.filter(p=>p.date==="2026-11-30"&&p.sport==="renfo").forEach(p=>{p.title="Muscu A — haut du corps (légère)";p.dur=45;p.int="facile";p.notes+=" Semaine du triathlon : charges modérées.";});
+  drop("2026-12-02",/^velo /);
+  out.push(T("2026-12-02","velo","Enchaînement court 1/2 — vélo 20 min dont 2 × 4 min fort",20,"modere","Les 2 × 4 min à allure course, le reste facile.","2+4"));
+  out.push(T("2026-12-02","course","Enchaînement court 2/2 — course 8 min dont 3 min allure 5 km",10,"modere","Juste après le vélo, 3 min vers 3:40/km.","2+4"));
+  drop("2026-12-03",/^renfo /);
+  out.push(T("2026-12-03","renfo","Muscu haut du corps légère",40,"facile","Aucun travail de jambes avant le triathlon.",null));
+  drop("2026-12-04",/^course /);
+  out.push(T("2026-12-04","course","Footing 20 min + 4 lignes droites",20,"facile","Court et relâché.","2"));
+  drop("2026-12-06",/^course /);
+  out.push(T("2026-12-06","autre","TRIATHLON — 400 m / 10 km / 2,5 km",45,"intense","Échauffement 10 min de course + 3 accélérations. Natation soutenue mais régulière ; vélo quasi à fond et régulier (dernière minute en souplesse) ; course à fond vers 3:35–3:40/km.","4-5"));
+  out.push(T("2026-12-06","course","Footing récup après le triathlon",20,"facile","15–20 min très faciles.","1-2"));
+  // Semaine 5
+  drop("2026-12-07",/^velo /);
+  out.push(T("2026-12-07","natation","Natation de récupération",30,"facile","Lendemain de triathlon : nage souple, pas de muscu jambes.","1-2"));
+  note("2026-12-08",/^course /,"Lendemain + 1 du triathlon : décale au mercredi si les jambes sont lourdes.");
   return out;
 }
 function progInfo(d=today0()){
