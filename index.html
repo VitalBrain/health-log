@@ -202,6 +202,15 @@ body:has(.selbar) .toast{bottom:calc(120px + env(safe-area-inset-bottom,0px))}
 .selbar{position:sticky;bottom:calc(10px + env(safe-area-inset-bottom,0px));z-index:15;display:flex;flex-wrap:wrap;gap:6px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;box-shadow:0 6px 24px rgba(0,0,0,.18)}
 .selbar .seln{font-weight:600;font-size:14px;margin-right:auto}
 .mg-list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.tpl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.tpl{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);text-align:left;cursor:pointer;font:inherit}
+.tpl span{font-size:20px}.tpl b{font-size:14px}.tpl small{font-size:11px;color:var(--muted)}
+.tpl[aria-pressed="true"]{border-color:var(--btn);box-shadow:0 0 0 2px var(--btn) inset}
+.wz-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}.wz-days select{width:100%;min-width:0;padding:6px 2px;font-size:12px}
+.wz-ex{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid var(--line)}
+.wz-ex{justify-content:space-between}.wz-exn{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600}.wz-exd{order:3;flex-basis:100%;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}.wz-exd .chip{padding:4px 0;justify-content:center;min-width:0}
+.wz-foot>.btn{flex:1}.wz-foot{position:sticky;bottom:-1px;background:var(--card);padding:10px 0 4px;margin-bottom:-4px;z-index:1}
+.wz-prev{padding:12px;border-radius:12px;background:var(--soft);font-size:14px;line-height:1.5}
 .mg-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line)}
 .mg-row:last-child{border-bottom:0}
 .danger-ghost{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,var(--line))}
@@ -1564,28 +1573,32 @@ function progOverrides(out){
   return out;
 }
 function progInfo(d=today0()){
-  if(S.set.prog!==PROG_ID) return null;
-  const k=dayKey(d); if(k<PROG_START||k>PROG_RACE) return null;
-  const w=Math.floor((d-parseDay(PROG_START))/(7*864e5))+1; const row=PROG_WEEKS[Math.min(PROG_N-1,Math.max(0,w-1))];
-  return {w,phase:row[1],vol:row[2],key:row[3],days:Math.round((parseDay(PROG_RACE)-d)/864e5)};
+  const P=curProg(); if(!P) return null;
+  const k=dayKey(d); if(k<P.start||k>P.race) return null;
+  const w=Math.floor((d-parseDay(P.start))/(7*864e5))+1; const row=P.weeks[Math.min(P.n-1,Math.max(0,w-1))]||{};
+  const sum=P.legacy?t(`≈ ${row.vol} km de course`,`≈ ${row.vol} km running`):t(`≈ ${hm(row.min||0)} d'entraînement`,`≈ ${hm(row.min||0)} of training`);
+  const sumFr=P.legacy?`≈ ${row.vol} km de course prévus`:`≈ ${hm(row.min||0)} d'entraînement prévues`;
+  return {w,n:P.n,name:P.name,raceName:P.raceName,phase:row.label,vol:row.vol,key:row.key||"",sum,sumFr,days:Math.round((parseDay(P.race)-d)/864e5)};
 }
 /* ---- chargement du programme sans doublons ----
    Identifiants stables (même séance = même id) : recharger, migrer ou charger depuis deux
    appareils écrase au lieu de dupliquer. Les séances manuelles en conflit (même jour, même sport)
    sont gardées ou remplacées selon le choix ; les anciennes séances d'autres programmes sont retirées. */
-function progItems(){
+function progItems(P=curProg()||legacyProg()){
   const tk=dayKey(today0()), n={};
-  return progBuild().filter(p=>p.date>=tk).map(p=>{ const k=`${p.date}-${p.sport}`; n[k]=(n[k]||0)+1; return {...p,id:`prog-${PROG_ID}-${k}-${n[k]}`}; });
+  return P.build().filter(p=>p.date>=tk).map(p=>{ const k=`${p.date}-${p.sport}`; n[k]=(n[k]||0)+1; return {...p,prog:P.id,id:`prog-${P.id}-${k}-${n[k]}`}; });
 }
 function progConflicts(items){
   const tk=dayKey(today0());
   return S.plans.filter(p=>p.date>=tk&&!p.prog&&!p.gen&&!String(p.id).startsWith("dp")&&items.some(i=>i.date===p.date&&i.sport===p.sport));
 }
-async function progLoad(mode){
+async function progLoad(mode,P){
   if(S.progLoading) return;
-  const items=progItems();
+  P=P||S.progNext||curProg()||legacyProg();
+  const items=progItems(P);
   const conflicts=progConflicts(items);
-  if(mode===undefined&&conflicts.length){ openProgConflicts(items,conflicts); return; }
+  if(mode===undefined&&conflicts.length){ S.progNext=P; openProgConflicts(items,conflicts); return; }
+  S.progNext=null;
   S.progLoading=true;
   try{
     const tk=dayKey(today0()), dates=new Set(items.map(p=>p.date)), keepIds=new Set(items.map(p=>p.id));
@@ -1599,11 +1612,14 @@ async function progLoad(mode){
     for(let i=0;i<drop.length;i+=20) await Promise.all(drop.slice(i,i+20).map(p=>delPlan(p.id)));
     for(let i=0;i<put.length;i+=20) await Promise.all(put.slice(i,i+20).map(p=>putPlan(p)));
     const dups=await removeDuplicatePlans(true);
-    S.set.prog=PROG_ID; S.set.progV=PROG_V; S.set.goal=PROG_GOAL; S.set.restDay=5;
-    if(!S.set.context||/^Objectif : battre mon record au semi \(1:20:26, mars 2024\) au Semi de Paris/.test(S.set.context)) S.set.context=PROG_CONTEXT;
+    const prevAuto=S.set.ctxAuto&&S.set.context===S.set.ctxAuto;
+    S.set.prog=P.id; S.set.goal=P.goal; S.set.restDay=P.restDay;
+    if(P.legacy){ S.set.progV=PROG_V; }
+    else { S.set.progV=null; S.set.progCfg=P.cfg; }
+    if(!S.set.context||prevAuto||S.set.context===PROG_CONTEXT||/^Objectif : battre mon record au semi \(1:20:26, mars 2024\) au Semi de Paris/.test(S.set.context)){ S.set.context=P.context; S.set.ctxAuto=P.context; }
     saveSettings(); render();
     const kept=items.length-put.length;
-    toast(t(`Programme chargé : ${put.length} séances jusqu'au ${fmtDate(parseDay(PROG_RACE))}`,`Plan loaded: ${put.length} sessions until ${fmtDate(parseDay(PROG_RACE))}`)+(kept?t(`, ${kept} remplacée(s) par tes séances`,`, ${kept} replaced by your own`):"")+(dups?t(`, ${dups} doublon(s) retiré(s)`,`, ${dups} duplicate(s) removed`):"")+".");
+    toast((t(`Programme chargé : ${put.length} séances jusqu'au ${fmtDate(parseDay(P.race))}`,`Plan loaded: ${put.length} sessions until ${fmtDate(parseDay(P.race))}`)+(kept?t(`, ${kept} remplacée(s) par tes séances`,`, ${kept} replaced by your own`):"")+(dups?t(`, ${dups} doublon(s) retiré(s)`,`, ${dups} duplicate(s) removed`):"")+".").replace(/\.\.$/,"."));
   } finally { S.progLoading=false; }
 }
 function openProgConflicts(items,conflicts){
@@ -1619,13 +1635,14 @@ function openProgConflicts(items,conflicts){
 }
 /* doublons : même jour, même sport, même titre (ou deux séances de programme le même jour et dans le même sport) */
 function findDuplicatePlans(){
-  const rank=p=>p.prog===PROG_ID?0:(!p.prog&&!p.gen)?1:p.prog?2:3;
+  const cid=S.set.prog||PROG_ID;
+  const rank=p=>p.prog===cid?0:(!p.prog&&!p.gen)?1:p.prog?2:3;
   const list=S.plans.filter(p=>!String(p.id).startsWith("dp")).sort((a,b)=>rank(a)-rank(b)||String(a.id).localeCompare(String(b.id)));
   const seen=new Set(), progDay=new Set(), dups=[];
   for(const p of list){
     const k=`${p.date}|${p.sport}|${norm(p.title||"")}`;
     if(seen.has(k)){ dups.push(p); continue; }
-    if(p.prog&&p.prog!==PROG_ID&&progDay.has(`${p.date}|${p.sport}`)){ dups.push(p); continue; }
+    if(p.prog&&p.prog!==cid&&progDay.has(`${p.date}|${p.sport}`)){ dups.push(p); continue; }
     seen.add(k); if(p.prog) progDay.add(`${p.date}|${p.sport}`);
   }
   return dups;
@@ -1642,15 +1659,365 @@ async function progRemove(){
   toast(t(`${ps.length} séances du programme retirées.`,`${ps.length} plan sessions removed.`));
 }
 function progCard(){
-  const I=progInfo();
-  if(!I){ const tk=dayKey(today0()); if(S.set.prog!==PROG_ID||tk>=PROG_START) return "";
-    const n=Math.round((parseDay(PROG_START)-today0())/864e5), r=Math.round((parseDay(PROG_RACE)-today0())/864e5);
-    return `<section class="card stack"><div class="row between"><h2>${t("Programme semi","Half-marathon plan")}</h2><span class="pill mut">${t(`Début dans ${n} j`,`Starts in ${n} d`)}</span></div><p class="lead" style="margin:0">${t(`Le programme commence le lundi 9 novembre (J-${r} avant le ${PROG_RACE_NAME}). D'ici là : repos ou très facile, pour arriver frais.`,`The plan starts on Monday, November 9 (${r} days to the ${PROG_RACE_NAME}). Until then: rest or very easy, to start fresh.`)}</p></section>`; }
+  const I=progInfo(), P=curProg();
+  if(!I){ const tk=dayKey(today0()); if(!P||tk>=P.start) return "";
+    const n=Math.round((parseDay(P.start)-today0())/864e5), r=Math.round((parseDay(P.race)-today0())/864e5);
+    return `<section class="card stack"><div class="row between"><h2>${esc(P.name)}</h2><span class="pill mut">${t(`Début dans ${n} j`,`Starts in ${n} d`)}</span></div><p class="lead" style="margin:0">${t(`Le programme commence le ${fmtDate(parseDay(P.start))} (J-${r} avant le ${esc(P.raceName)}). D'ici là : entraînement libre et facile, pour arriver frais.`,`The plan starts on ${fmtDate(parseDay(P.start))} (${r} days to the ${esc(P.raceName)}). Until then: free, easy training, to start fresh.`)}</p></section>`; }
   const tk=dayKey(today0()); const todays=PLANS().filter(p=>p.date===tk);
-  return `<section class="card stack"><div class="row between"><h2>${t("Programme semi","Half-marathon plan")}</h2><span class="pill info">${t(`Semaine ${I.w}/${PROG_N} · ${I.phase}`,`Week ${I.w}/${PROG_N} · ${I.phase}`)}</span></div>
-    <p class="lead" style="margin:0">${I.days>0?t(`J-${I.days} avant le ${PROG_RACE_NAME}.`,`${I.days} days to the ${PROG_RACE_NAME}.`):t("C'est le jour J !","Race day!")} ${t(`Cette semaine : ≈ ${I.vol} km de course, séance clé « ${esc(I.key)} ».`,`This week: ≈ ${I.vol} km running, key session “${esc(I.key)}”.`)}</p>
-    ${todays.length?`<div class="stack" style="gap:8px">${todays.map(p=>planItem(p)).join("")}</div>`:`<div class="empty">${t("Aujourd'hui : repos complet. Vélotaf ou marche tranquille seulement.","Today: full rest. Easy commute or walk only.")}</div>`}
+  return `<section class="card stack"><div class="row between"><h2>${esc(I.name)}</h2><span class="pill info">${t(`Semaine ${I.w}/${I.n} · ${I.phase}`,`Week ${I.w}/${I.n} · ${I.phase}`)}</span></div>
+    <p class="lead" style="margin:0">${I.days>0?t(`J-${I.days} avant le ${esc(I.raceName)}.`,`${I.days} days to the ${esc(I.raceName)}.`):t("C'est le jour J !","Race day!")} ${t(`Cette semaine : ${I.sum}`,`This week: ${I.sum}`)}${I.key?t(`, séance clé « ${esc(I.key)} »`,`, key session “${esc(I.key)}”`):""}.</p>
+    ${todays.length?`<div class="stack" style="gap:8px">${todays.map(p=>planItem(p)).join("")}</div>`:`<div class="empty">${t("Aujourd'hui : repos complet. Marche ou vélotaf tranquille seulement.","Today: full rest. Easy walk or commute only.")}</div>`}
   </section>`;
+}
+
+/* ============ programmes par défaut (modèles ajustables) ============
+   Un modèle = un objectif (10 km, semi, marathon, triathlon S/M, 70.3, Ironman, 100 km vélo).
+   La configuration (date de course, niveau, heures dispo, minutes par jour, jour de sortie longue,
+   autres sports et leurs jours) est gardée dans S.set.progCfg : le programme est régénéré à
+   l'identique (mêmes ids) tant qu'elle ne change pas. */
+const TPLS={
+  run_10k:{kind:"run",fr:"10 km",en:"10K",dist:"10 km",def:10,min:6,max:16,taper:1,hrs:[3,4.5,6],race:50,cap:{course:95}},
+  run_half:{kind:"run",fr:"Semi-marathon",en:"Half marathon",dist:"21,1 km",def:12,min:8,max:20,taper:1,hrs:[3.5,5,7],race:110,cap:{course:125}},
+  run_marathon:{kind:"run",fr:"Marathon",en:"Marathon",dist:"42,2 km",def:16,min:12,max:24,taper:2,hrs:[4.5,6.5,9],race:240,cap:{course:170}},
+  tri_s:{kind:"tri",fr:"Triathlon S (sprint)",en:"Sprint triathlon",dist:"750 m / 20 km / 5 km",def:10,min:6,max:16,taper:1,hrs:[3.5,5,7],race:80,cap:{natation:45,velo:105,course:60}},
+  tri_m:{kind:"tri",fr:"Triathlon M (olympique)",en:"Olympic triathlon",dist:"1,5 km / 40 km / 10 km",def:12,min:8,max:20,taper:1,hrs:[5,7,9],race:150,cap:{natation:60,velo:150,course:80}},
+  tri_703:{kind:"tri",fr:"Half Ironman 70.3",en:"Half Ironman 70.3",dist:"1,9 km / 90 km / 21,1 km",def:18,min:12,max:26,taper:2,hrs:[7,9,12],race:360,cap:{natation:75,velo:240,course:110}},
+  ironman:{kind:"tri",fr:"Mon premier Ironman",en:"My first Ironman",dist:"3,8 km / 180 km / 42,2 km",def:26,min:20,max:36,taper:3,hrs:[9,12,15],race:780,cap:{natation:90,velo:360,course:160}},
+  bike_100k:{kind:"bike",fr:"100 km à vélo",en:"100 km ride",dist:"100 km",def:10,min:6,max:16,taper:1,hrs:[4,6,8],race:240,cap:{velo:270}}
+};
+const TPL_K=Object.keys(TPLS);
+const TPL_ICON={run_10k:"🏃",run_half:"🏃",run_marathon:"🏃",tri_s:"🏊",tri_m:"🏊",tri_703:"🔱",ironman:"🏅",bike_100k:"🚴"};
+const tplName=k=>TPLS[k]?t(TPLS[k].fr,TPLS[k].en):"";
+const tplSports=k=>{ const K=TPLS[k].kind; return K==="run"?["course"]:K==="bike"?["velo"]:["natation","velo","course"]; };
+const LEVELS=()=>[t("Débutant","Beginner"),t("Intermédiaire","Intermediate"),t("Confirmé","Advanced")];
+const AV_OPTS=[0,30,45,60,75,90,120,150,180,240,300,360];
+const hm=m=>{ m=Math.round(m); return m<60?`${m} min`:`${Math.floor(m/60)}h${m%60?String(m%60).padStart(2,"0"):""}`; };
+const hFmt=h=>t(String(h).replace(".",","),String(h));
+const PH_L=()=>({base:t("Fondation","Base"),build:t("Développement","Build"),peak:t("Spécifique","Peak"),rec:t("Allégée","Recovery"),taper:t("Affûtage","Taper"),race:t("Course","Race")});
+
+function tplDefaults(tpl="run_half",level=1){
+  const T=TPLS[tpl];
+  let race=addDays(startOfWeek(today0()),T.def*7-1); // un dimanche
+  return {tpl,level,race:dayKey(race),name:"",hours:T.hrs[level],avail:[60,60,60,60,0,120,180],longDay:6,extras:[]};
+}
+/* séances types d'une semaine, avec poids (part du budget), priorité (1 = indispensable) et bornes */
+function tplSessions(cfg,ph){
+  const T=TPLS[cfg.tpl], L=cfg.level, C=T.cap, out=[];
+  const S_=(sport,role,w,prio,min,max,hard=false)=>out.push({sport,role,w,prio,min,max,hard});
+  const noStr=(cfg.extras||[]).some(x=>x.sport==="renfo"&&x.days.length);
+  if(T.kind==="run"){
+    S_("course","long",cfg.tpl==="run_marathon"?.33:.3,1,40,C.course);
+    S_("course","key",.2,2,35,80,true);
+    S_("course","easy",.15,3,30,60);
+    if(!noStr) S_("renfo","str",.07,4,25,40);
+    if(L>=1) ph==="base"||ph==="rec"?S_("course","strides",.12,5,30,55):S_("course","key2",.14,5,35,75,cfg.tpl!=="run_marathon");
+    if(L>=1) S_("course","easy",.11,6,30,60);
+    if(L>=2) S_("course","recov",.08,7,25,45);
+  } else if(T.kind==="bike"){
+    S_("velo","long",.42,1,60,C.velo);
+    S_("velo","key",.2,2,45,90,true);
+    S_("velo","easy",.18,3,45,90);
+    if(!noStr) S_("renfo","str",.06,4,25,40);
+    if(L>=1) S_("velo","tempo",.14,5,45,90);
+  } else {
+    const long=cfg.tpl==="tri_703"||cfg.tpl==="ironman";
+    S_("velo","long",long?.3:.24,1,45,C.velo);
+    S_("course","long",long?.17:.15,1,35,C.course);
+    S_("natation","tech",.09,2,30,C.natation);
+    S_("velo","key",.13,3,40,90,true);
+    S_("course","key",.1,4,30,70,true);
+    S_("natation","swim",.1,5,30,C.natation);
+    S_("course","easy",.07,6,25,50);
+    S_("velo","easy",.08,7,40,90);
+    if(long||L>=2) S_("natation","swim3",.06,8,30,C.natation);
+    if(!noStr) S_("renfo","str",.04,9,25,35);
+  }
+  return out;
+}
+/* contenu d'une séance selon le sport, son rôle, la phase et l'objectif */
+function tplContent(s,ph,k,cfg,dur){
+  const tpl=cfg.tpl, T=TPLS[tpl], pick=a=>a[k%a.length], W=t("15 min d'échauffement en Z1–Z2, ","15 min warm-up in Z1–Z2, "), CD=t(", puis 10 min de retour au calme.",", then a 10 min cool-down.");
+  const taper=ph==="taper", rec=ph==="rec", peak=ph==="peak", D=hm(dur);
+  const r=(title,int,zone,notes)=>({title,int,zone,notes});
+  if(s.sport==="course"){
+    if(s.role==="long"){
+      let extra="", zone="2", int="facile";
+      if(peak&&!rec){
+        if(tpl==="run_marathon"){ extra=t(" dont 3 × 15 min allure marathon"," incl. 3 × 15 min at marathon pace"); zone="2+3"; int="modere"; }
+        else if(tpl==="run_half"){ extra=t(" dont 2 × 10 min allure semi"," incl. 2 × 10 min at half-marathon pace"); zone="2+4"; int="modere"; }
+        else if(tpl==="run_10k"){ extra=t(", 5 dernières min allure 10 km",", last 5 min at 10K pace"); zone="2+4"; }
+        else if(tpl==="tri_s"||tpl==="tri_m"){ extra=t(" dont 15 min allure course"," incl. 15 min at race pace"); zone="2+4"; int="modere"; }
+      }
+      return r(t(`Sortie longue ${D}`,`Long run ${D}`)+extra+(extra?"":" EF"),int,zone,t("Allure facile, en aisance respiratoire. Au-delà de 1h15 : boire et 1 gel toutes les 40–45 min.","Easy, conversational pace. Beyond 1h15: drink and take a gel every 40–45 min."));
+    }
+    if(s.role==="key"){
+      if(taper) return r(t("Rappel : 4 × 3 min allure course, récup 2 min","Sharpener: 4 × 3 min at race pace, 2 min recovery"),"modere","2+4",W+t("puis les répétitions sans forcer","then the reps, controlled")+CD);
+      if(rec) return r(t("Fartlek léger : 8 × 1 min vive / 1 min lente","Light fartlek: 8 × 1 min brisk / 1 min easy"),"modere","2+4",W+t("rester relâché","stay relaxed")+CD);
+      const BASE=[[t("8 × 30 s en côte vive, récup en descendant au trot","8 × 30 s hill sprints, jog-down recovery"),"5"],[t("Fartlek 10 × 1 min vite / 1 min lent","Fartlek 10 × 1 min fast / 1 min easy"),"4-5"],[t("6 × 2 min allure 10 km, récup 1 min 30","6 × 2 min at 10K pace, 1:30 recovery"),"4"]];
+      const BUILD=[[t("3 × 8 min au seuil, récup 2 min","3 × 8 min at threshold, 2 min recovery"),"4"],[t("6 × 800 m allure 5–10 km, récup 1 min 30","6 × 800 m at 5–10K pace, 1:30 recovery"),"4-5"],[t("2 × 12 min au seuil, récup 3 min","2 × 12 min at threshold, 3 min recovery"),"4"],[t("10 × 400 m vifs, récup 1 min","10 × 400 m fast, 1 min recovery"),"5"]];
+      const PEAK={run_10k:[[t("6 × 1000 m allure 10 km, récup 1 min 30","6 × 1000 m at 10K pace, 1:30 recovery"),"4-5"],[t("3 × 2000 m allure 10 km, récup 2 min","3 × 2000 m at 10K pace, 2 min recovery"),"4"],[t("12 × 400 m allure 5 km, récup 1 min","12 × 400 m at 5K pace, 1 min recovery"),"5"]],
+        run_half:[[t("3 × 3 km allure semi, récup 2 min","3 × 3 km at half-marathon pace, 2 min recovery"),"4"],[t("2 × 5 km allure semi, récup 3 min","2 × 5 km at half-marathon pace, 3 min recovery"),"4"],[t("5 × 1000 m allure 10 km, récup 1 min 30","5 × 1000 m at 10K pace, 1:30 recovery"),"4-5"]],
+        run_marathon:[[t("3 × 4 km allure marathon, récup 2 min","3 × 4 km at marathon pace, 2 min recovery"),"3"],[t("2 × 20 min au seuil, récup 4 min","2 × 20 min at threshold, 4 min recovery"),"4"],[t("6 × 1000 m allure semi, récup 1 min","6 × 1000 m at half-marathon pace, 1 min recovery"),"4"]]};
+      const P=PEAK[tpl]||[[t("5 × 1000 m allure 10 km, récup 1 min 30","5 × 1000 m at 10K pace, 1:30 recovery"),"4-5"],[t("3 × 10 min au seuil, récup 2 min","3 × 10 min at threshold, 2 min recovery"),"4"]];
+      const [x,z]=pick(ph==="base"?BASE:ph==="build"?BUILD:P);
+      return r(t(`Séance clé — ${x}`,`Key session — ${x}`),"intense",z,W+t(`puis ${x}`,`then ${x}`)+CD+t(" Récupérations en trottinant."," Jog the recoveries."));
+    }
+    if(s.role==="key2"){
+      const x=tpl==="run_marathon"?t(`Footing long ${D} dont 2 × 15 min allure marathon`,`Steady run ${D} incl. 2 × 15 min at marathon pace`):tpl==="run_half"?t(`Tempo : ${D} dont 20 min allure semi`,`Tempo: ${D} incl. 20 min at half-marathon pace`):t(`Fartlek ${D} : 8 × 2 min allure 10 km`,`Fartlek ${D}: 8 × 2 min at 10K pace`);
+      return r(x,tpl==="run_marathon"?"modere":"intense",tpl==="run_marathon"?"2+3":"2+4",t("Deuxième séance de qualité : plus contrôlée que la séance clé. Si les jambes sont lourdes, fais-la en footing EF.","Second quality session: more controlled than the key one. If your legs feel heavy, run it easy."));
+    }
+    if(s.role==="strides") return r(t(`Footing EF ${D} + 6 lignes droites`,`Easy run ${D} + 6 strides`),"facile","2",t("Lignes droites : 20 s rapides et relâchées, 60–90 s de marche entre chaque.","Strides: 20 s fast and relaxed, walk 60–90 s between each."));
+    if(s.role==="recov") return r(t(`Footing récup ${D}`,`Recovery run ${D}`),"facile","1-2",t("Très lent : tu dois pouvoir discuter sans effort.","Very slow: you should be able to chat easily."));
+    return r(t(`Footing EF ${D}`,`Easy run ${D}`),"facile","2",t("Endurance fondamentale, cadence souple.","Easy endurance, light cadence."));
+  }
+  if(s.sport==="velo"){
+    if(s.role==="long"){
+      let extra="", zone="2", int="facile";
+      if(peak&&!rec){
+        if(tpl==="tri_703"||tpl==="ironman"){ extra=t(" dont 2 × 20 min allure course"," incl. 2 × 20 min at race pace"); zone="2+3"; int="modere"; }
+        else if(tpl==="bike_100k"){ extra=t(" dont 3 × 15 min tempo"," incl. 3 × 15 min tempo"); zone="2+3"; int="modere"; }
+        else { extra=t(" dont 3 × 8 min allure course"," incl. 3 × 8 min at race pace"); zone="2+4"; int="modere"; }
+      }
+      const nut=dur>=90?t(" Manger 40–60 g de glucides par heure dès la première heure, et tester ce que tu prendras le jour J."," Eat 40–60 g of carbs per hour from the first hour, and test your race-day fuelling."):"";
+      return r(t(`Sortie longue vélo ${D}`,`Long ride ${D}`)+extra,int,zone,t("Endurance Z2, pédalage souple (85–95 rpm).","Z2 endurance, smooth pedalling (85–95 rpm).")+nut);
+    }
+    if(s.role==="key"){
+      if(taper) return r(t("Vélo rappel : 3 × 5 min allure course","Bike sharpener: 3 × 5 min at race pace"),"modere","2+4",t("Le reste très facile.","The rest very easy."));
+      if(rec) return r(t(`Vélo endurance ${D} + 4 accélérations`,`Endurance ride ${D} + 4 accelerations`),"facile","1-2",t("Semaine allégée : on garde juste un peu de vivacité.","Recovery week: just keep a bit of snap."));
+      const BASE=[[t("5 × 4 min en côte à basse cadence (60–70 rpm), récup 3 min","5 × 4 min uphill at low cadence (60–70 rpm), 3 min recovery"),"3-4"],[t("3 × 10 min tempo, récup 3 min","3 × 10 min tempo, 3 min recovery"),"3"]];
+      const BUILD=[[t("4 × 8 min au seuil, récup 4 min","4 × 8 min at threshold, 4 min recovery"),"4"],[t("3 × 12 min au seuil, récup 5 min","3 × 12 min at threshold, 5 min recovery"),"4"],[t("6 × 3 min à PMA, récup 3 min","6 × 3 min at VO2max, 3 min recovery"),"5"]];
+      const PEAK=tpl==="tri_703"||tpl==="ironman"?[[t("2 × 20 min allure course, récup 5 min","2 × 20 min at race pace, 5 min recovery"),"3"],[t("3 × 15 min au seuil bas, récup 5 min","3 × 15 min at low threshold, 5 min recovery"),"3-4"]]:tpl==="bike_100k"?[[t("3 × 15 min tempo-seuil, récup 5 min","3 × 15 min tempo-threshold, 5 min recovery"),"3-4"],[t("5 × 6 min au seuil, récup 3 min","5 × 6 min at threshold, 3 min recovery"),"4"]]:[[t("5 × 5 min allure course, récup 3 min","5 × 5 min at race pace, 3 min recovery"),"4-5"],[t("4 × 8 min au seuil, récup 3 min","4 × 8 min at threshold, 3 min recovery"),"4"]];
+      const [x,z]=pick(ph==="base"?BASE:ph==="build"?BUILD:PEAK);
+      return r(t(`Vélo clé — ${x}`,`Key ride — ${x}`),"intense",z,t("15 min d'échauffement progressif, puis ","15 min progressive warm-up, then ")+x+CD);
+    }
+    if(s.role==="tempo") return r(ph==="base"||rec?t(`Vélo cadence ${D} : 6 × 3 min à 100+ rpm`,`Cadence ride ${D}: 6 × 3 min at 100+ rpm`):t(`Vélo tempo ${D} : 2 × 20 min Z3`,`Tempo ride ${D}: 2 × 20 min Z3`),"modere",ph==="base"||rec?"2":"2+3",t("Effort soutenu mais maîtrisé.","Steady but controlled effort."));
+    return r(t(`Vélo endurance ${D}`,`Endurance ride ${D}`),"facile","1-2",t("Pédalage souple, sans côtes appuyées.","Smooth pedalling, no hard climbs."));
+  }
+  if(s.sport==="natation"){
+    if(s.role==="tech") return r(t(`Natation technique ${D}`,`Technique swim ${D}`),"facile","1-2",t("Échauffement 300 m, éducatifs 8 × 50 m (rattrapé, poings fermés, 6 battements/bras), puis 6 × 100 m souples en cherchant la glisse.","Warm up 300 m, drills 8 × 50 m (catch-up, fists, 6-kick switch), then 6 × 100 m easy, focusing on glide."));
+    if(s.role==="swim3") return r(t(`Natation continue ${D}`,`Continuous swim ${D}`),"facile","2",t("Nage régulière sans arrêt, respiration tous les 3 temps si possible.","Steady non-stop swim, bilateral breathing if you can."));
+    const x=taper?t("6 × 100 m allure course, récup 30 s","6 × 100 m at race pace, 30 s rest"):rec||ph==="base"?t("4 × 300 m endurance, récup 30 s","4 × 300 m endurance, 30 s rest"):ph==="build"?t("10 × 100 m au seuil, récup 15 s","10 × 100 m at threshold, 15 s rest"):t("3 × 500 m allure course, récup 45 s","3 × 500 m at race pace, 45 s rest");
+    return r(t(`Natation — ${x}`,`Swim — ${x}`),ph==="build"&&!rec?"intense":"modere",ph==="build"&&!rec?"3-4":"2-3",t("Échauffement 300 m. ","300 m warm-up. ")+(peak&&T.kind==="tri"?t("Travaille le regard devant (sighting) toutes les 6 coulées ; en eau libre si possible.","Practise sighting every 6 strokes; in open water if possible."):t("Garde une nage propre jusqu'au bout.","Keep your stroke clean to the end.")));
+  }
+  if(s.sport==="renfo") return r(taper||rec?t(`Renfo léger ${D} : gainage + mobilité`,`Light strength ${D}: core + mobility`):t(`Renfo ${D} : gainage + jambes`,`Strength ${D}: core + legs`),taper||rec?"facile":"modere",null,t("Squat, fentes, mollets, gainage, tirage. Charges modérées, jamais la veille d'une séance clé.","Squats, lunges, calves, core, pulls. Moderate loads, never the day before a key session."));
+  return r(SPORTS[s.sport].l,"facile",null,"");
+}
+/* génération complète : semaines, phases, budget, placement des séances dans les jours disponibles */
+const TPL_CACHE={};
+function tplBuild(cfg){
+  const key=JSON.stringify(cfg)+LANG+(S.set.defTime||"");
+  if(TPL_CACHE.k===key) return TPL_CACHE.v;
+  const T=TPLS[cfg.tpl], race=parseDay(cfg.race), raceMon=startOfWeek(race);
+  let start=parseDay(cfg.start||dayKey(startOfWeek(today0())));
+  let N=Math.round((raceMon-start)/(7*864e5))+1;
+  if(N>T.max){ start=addDays(raceMon,-(T.max-1)*7); N=T.max; }
+  const warn=[];
+  if(N<T.min) warn.push(t(`Préparation courte : ${N} semaine(s) au lieu de ${T.min} minimum conseillées. Le programme est compressé, reste prudent.`,`Short build: ${N} week(s) instead of the recommended ${T.min}. The plan is compressed, stay careful.`));
+  const items=[], weeks=[], tm=S.set.defTime||"18:00";
+  const nT=Math.max(0,Math.min(T.taper,N-3)), M=Math.max(0,N-1-nT);
+  const s0=[.6,.7,.75][cfg.level]??.7;
+  const avail=cfg.avail.map(x=>+x||0), extras=(cfg.extras||[]).filter(x=>x.days&&x.days.length);
+  const exMin=extras.reduce((s,x)=>s+x.dur*x.days.length,0);
+  let rest=avail.map((a,i)=>a?null:i).filter(x=>x!=null);
+  const forcedRest=rest.length?null:(cfg.longDay+1)%7;
+  if(forcedRest!=null){ rest=[forcedRest]; }
+  const longDay=cfg.longDay, longDay2=avail.map((a,i)=>[a,i]).filter(([a,i])=>i!==longDay&&i!==forcedRest).sort((x,y)=>y[0]-x[0]||Math.abs(x[1]-longDay)-Math.abs(y[1]-longDay))[0]?.[1];
+  let skipped=0, short=0;
+  const P=(d,sport,c,dur,time)=>items.push({date:dayKey(d),time:time||(([5,6].includes((d.getDay()+6)%7))?"09:00":tm),sport,title:c.title,dur:r5(dur),int:c.int,notes:c.notes,zone:c.zone??null,gen:false});
+  const phCount={};
+  for(let w=1;w<=N-1;w++){
+    const i=w-1, mon=addDays(start,i*7);
+    let ph, f;
+    if(i<M){ f=s0+(1-s0)*(M>1?i/(M-1):1); ph=i<M*.4?"base":i<M*.75?"build":"peak"; if((i+1)%4===0&&i<M-1){ f*=.7; ph="rec"; } }
+    else { ph="taper"; f=nT-(i-M)>1?.75:.6; }
+    const k=phCount[ph]=(phCount[ph]??-1)+1;
+    const budget=Math.max(0,cfg.hours*60*f-exMin);
+    let sess=tplSessions(cfg,ph==="taper"?"peak":ph).map(s=>({...s}));
+    if(ph==="taper") sess=sess.filter(s=>s.prio<=6);
+    if(ph==="taper"||ph==="rec") sess.forEach(s=>{ s.min=Math.max(20,Math.round(s.min*.7)); });
+    // durée cible = part du budget, bornée ; on retire les moins prioritaires si le budget ne suffit pas
+    const sized=()=>{ const sw=sess.reduce((a,s)=>a+s.w,0); sess.forEach(s=>{ let cap=s.max; if(s.role==="long") cap=s.min+(s.max-s.min)*Math.min(1,f*(ph==="base"?.75:ph==="build"?.9:1)); s.dur=Math.max(s.min,Math.min(cap,budget*s.w/sw)); }); return sess.reduce((a,s)=>a+s.dur,0); };
+    while(sized()>budget*1.08&&sess.length>2&&sess[sess.length-1].prio>2){ sess.sort((a,b)=>a.prio-b.prio); sess.pop(); }
+    // placement
+    const cap=avail.slice(); rest.forEach(d=>cap[d]=0);
+    const day=[[],[],[],[],[],[],[]], hard=[0,0,0,0,0,0,0], isLong=[0,0,0,0,0,0,0];
+    for(const x of extras) for(const d of x.days){ day[d].push({sport:x.sport,extra:1}); cap[d]=Math.max(0,cap[d]-x.dur); if(x.int==="intense") hard[d]=1;
+      P(addDays(mon,d),x.sport,{title:`${SPORTS[x.sport].l} (${hm(x.dur)})`,int:x.int,zone:null,notes:t("Autre sport choisi dans ton programme : il compte dans ta charge de la semaine.","Other sport chosen in your plan: it counts toward your weekly load.")},x.dur); }
+    sess.sort((a,b)=>a.prio-b.prio||(b.role==="long")-(a.role==="long"));
+    let weekKey="";
+    for(const s of sess){
+      let best=-1, bs=-1e9;
+      for(let d=0;d<7;d++){
+        if(cap[d]<s.min) continue;
+        const mine=day[d].filter(x=>!x.extra);
+        if(mine.length>=2||day[d].some(x=>x.sport===s.sport)) continue;
+        let sc=Math.min(cap[d],s.dur)/6-day[d].length*14;
+        if(cap[d]<s.dur) sc-=25;
+        if(s.role==="long"){ sc+=d===longDay?120:d===longDay2?45:0; if(isLong[d]) sc-=80; if(d>0&&hard[d-1]) sc-=20; }
+        if(s.hard){ if(hard[d]||isLong[d]) sc-=70; if((d>0&&hard[d-1])||(d<6&&hard[d+1])) sc-=45; if(d<6&&isLong[d+1]) sc-=35; if(d>0&&isLong[d-1]) sc-=15; if(d===longDay||d===longDay2) sc-=40; }
+        for(let e=0;e<7;e++) if(e!==d&&day[e].some(x=>x.sport===s.sport)){ const dist=Math.abs(e-d); if(dist<3) sc-=(3-dist)*12; }
+        if(sc>bs){ bs=sc; best=d; }
+      }
+      if(best<0){ skipped++; continue; }
+      const dur=Math.min(s.dur,cap[best]); if(dur<s.dur-5) short++;
+      cap[best]-=dur; day[best].push({sport:s.sport}); if(s.hard) hard[best]=1; if(s.role==="long") isLong[best]=1;
+      const c=tplContent(s,ph,k,cfg,r5(dur));
+      if(s.role==="key"&&s.sport===(T.kind==="tri"?"velo":T.kind==="bike"?"velo":"course")) weekKey=c.title.replace(/^(Séance clé|Key session|Vélo clé|Key ride) — /,"");
+      P(addDays(mon,best),s.sport,c,dur);
+      // enchaînement vélo → course après la sortie longue (triathlon, phases développement/spécifique)
+      if(T.kind==="tri"&&s.role==="long"&&s.sport==="velo"&&(ph==="build"||ph==="peak")&&cap[best]>=10&&!day[best].some(x=>x.sport==="course")){
+        const bd=Math.min(cap[best],ph==="peak"?25:15); cap[best]-=bd; day[best].push({sport:"course"});
+        P(addDays(mon,best),"course",{title:t(`Enchaînement : course ${hm(r5(bd))} juste après le vélo`,`Brick: ${hm(r5(bd))} run straight off the bike`),int:"modere",zone:ph==="peak"?"2+4":"2",notes:t("Apprendre à courir avec des jambes de cycliste : pars doucement, la foulée revient après 5 min.","Learn to run on cycling legs: start easy, your stride comes back after 5 min.")},bd);
+      }
+    }
+    const planned=items.filter(p=>{ const k2=p.date; return k2>=dayKey(mon)&&k2<=dayKey(addDays(mon,6)); }).reduce((a,p)=>a+p.dur,0);
+    weeks.push({w,mon:dayKey(mon),ph,label:PH_L()[ph],min:planned,key:weekKey});
+  }
+  // semaine de course : séances d'activation calées sur la date de la course
+  const cut=dayKey(addDays(race,-5));
+  for(let i=items.length-1;i>=0;i--) if(items[i].date>=cut) items.splice(i,1);
+  const rw=(off,sport,title,dur,int,zone,notes)=>{ const d=addDays(race,off); if(d<start) return; const dw=(d.getDay()+6)%7; if(off<0&&!avail[dw]) return; P(d,sport,{title,int,zone,notes},off<0?Math.min(dur,avail[dw]):dur); };
+  const rn=cfg.name||tplName(cfg.tpl);
+  if(T.kind==="run"){
+    rw(-5,"course",t("Rappel : 4 × 3 min allure course, récup 2 min","Sharpener: 4 × 3 min at race pace, 2 min recovery"),40,"modere","2+4",t("Semaine de course : volume réduit, un peu de rythme pour rester vif.","Race week: reduced volume, a little pace to stay sharp."));
+    rw(-3,"course",t("Footing 30 min + 4 lignes droites","30 min easy + 4 strides"),35,"facile","2",t("Très facile.","Very easy."));
+    rw(-1,"course",t("Déblocage 20 min + 3 accélérations","20 min shake-out + 3 accelerations"),20,"facile","1-2",t("Veille de course : court et facile. Prépare tes affaires et ton dossard.","Day before: short and easy. Get your kit and bib ready."));
+  } else if(T.kind==="bike"){
+    rw(-5,"velo",t("Vélo rappel : 3 × 5 min allure tempo","Bike sharpener: 3 × 5 min tempo"),60,"modere","2+3",t("Semaine de l'objectif : volume réduit.","Event week: reduced volume."));
+    rw(-3,"velo",t("Vélo souple 45 min","Easy spin 45 min"),45,"facile","1-2",t("Vérifie le vélo (pneus, freins, transmission).","Check your bike (tyres, brakes, drivetrain)."));
+    rw(-1,"velo",t("Déblocage 30 min + 3 accélérations","30 min spin + 3 accelerations"),30,"facile","1-2",t("Prépare ravitaillement et parcours.","Prepare food, drinks and route."));
+  } else {
+    rw(-5,"natation",t("Natation : 6 × 100 m allure course","Swim: 6 × 100 m at race pace"),35,"modere","2-3",t("Semaine de course : volume réduit.","Race week: reduced volume."));
+    rw(-4,"velo",t("Vélo 45 min dont 3 × 3 min allure course","Bike 45 min incl. 3 × 3 min at race pace"),45,"modere","2+4",t("Le reste très facile.","The rest very easy."));
+    rw(-3,"course",t("Footing 25 min + 4 lignes droites","25 min easy + 4 strides"),25,"facile","2",t("Très facile.","Very easy."));
+    rw(-1,"velo",t("Activation : vélo 20 min + course 10 min","Openers: 20 min bike + 10 min run"),30,"facile","1-2",t("Prépare ton sac de transition, vérifie le vélo.","Pack your transition bag, check your bike."));
+  }
+  P(race,T.kind==="tri"?"autre":T.kind==="bike"?"velo":"course",{title:`${rn.toUpperCase()} — ${T.dist}`,int:"intense",zone:T.kind==="bike"?"2-3":"4",notes:t("Jour J : départ prudent, mange et bois selon ce que tu as testé à l'entraînement. Bonne course !","Race day: start conservatively, eat and drink as tested in training. Have a great race!")},T.race,"09:00");
+  weeks.push({w:N,mon:dayKey(raceMon),ph:"race",label:PH_L().race,min:items.filter(p=>p.date>=dayKey(raceMon)).reduce((a,p)=>a+p.dur,0),key:rn});
+  if(skipped) warn.push(t(`${skipped} séance(s) n'ont pas trouvé de créneau sur l'ensemble du programme : ajoute du temps certains jours si tu peux.`,`${skipped} session(s) found no slot across the plan: add time on some days if you can.`));
+  if(short) warn.push(t(`${short} séance(s) raccourcie(s) pour tenir dans tes créneaux.`,`${short} session(s) shortened to fit your slots.`));
+  if(exMin>=cfg.hours*60*.6) warn.push(t("Tes autres sports prennent l'essentiel de ton temps : le programme dispose de peu de minutes.","Your other sports take most of your time: the plan has few minutes left."));
+  if(cfg.hours<T.hrs[0]) warn.push(t(`Pour un ${tplName(cfg.tpl)}, compte au moins ${T.hrs[0]} h/semaine au pic.`,`For a ${tplName(cfg.tpl)}, plan at least ${T.hrs[0]} h/week at peak.`));
+  const v={items,weeks,warn,start:dayKey(start),N,rest};
+  TPL_CACHE.k=key; TPL_CACHE.v=v; return v;
+}
+function customProg(cfg=S.set.progCfg){
+  if(!cfg||!TPLS[cfg.tpl]) return null;
+  const B=tplBuild(cfg), T=TPLS[cfg.tpl], name=cfg.name||tplName(cfg.tpl);
+  const id=`c-${cfg.tpl}-${cfg.race}`;
+  const daysTxt=cfg.avail.map((a,i)=>a?`${DAYS_L()[i]} ${hm(a)}`:null).filter(Boolean).join(", ");
+  const exTxt=(cfg.extras||[]).filter(x=>x.days.length).map(x=>`${SPORTS[x.sport].l} (${x.days.map(d=>DAYS_L()[d]).join(", ")}, ${hm(x.dur)})`).join(" ; ");
+  const goal=t(`${name} (${T.dist}) le ${fmtDate(parseDay(cfg.race))}`,`${name} (${T.dist}) on ${fmtDate(parseDay(cfg.race))}`);
+  const context=t(`Objectif : ${goal}. Niveau ${LEVELS()[cfg.level].toLowerCase()}.
+Programme de ${B.N} semaines à partir du ${fmtDate(parseDay(B.start))} : fondation, développement, spécifique, affûtage, avec une semaine allégée toutes les 4 semaines.
+Temps disponible : environ ${hFmt(cfg.hours)} h/semaine au pic. Créneaux : ${daysTxt}. Sortie longue le ${DAYS_L()[cfg.longDay]}. Repos : ${B.rest.map(d=>DAYS_L()[d]).join(", ")}.
+${exTxt?`Autres sports à garder : ${exTxt}. Ils comptent dans la charge : pas de séance clé le lendemain d'un sport intense.\n`:""}Règles : une seule séance dure par sport et par semaine (deux maximum pour les confirmés), 80 % du temps en endurance facile, alléger si fatigue, sommeil perturbé ou FC repos +5 bpm.`,
+`Goal: ${goal}. ${LEVELS()[cfg.level]} level.
+${B.N}-week plan from ${fmtDate(parseDay(B.start))}: base, build, peak, taper, with a recovery week every 4 weeks.
+Time available: about ${cfg.hours} h/week at peak. Slots: ${daysTxt}. Long session on ${DAYS_L()[cfg.longDay]}. Rest: ${B.rest.map(d=>DAYS_L()[d]).join(", ")}.
+${exTxt?`Other sports to keep: ${exTxt}. They count toward load: no key session the day after an intense sport.\n`:""}Rules: one hard session per sport per week (two max for advanced athletes), 80% of time easy, back off when tired, sleeping badly or resting HR +5 bpm.`);
+  return {id,custom:true,cfg,name,raceName:name,start:B.start,race:cfg.race,n:B.N,weeks:B.weeks,build:()=>B.items.map(p=>({...p,prog:id})),goal,context,restDay:B.rest[0]??0,warn:B.warn};
+}
+function legacyProg(){
+  return {id:PROG_ID,v:PROG_V,legacy:true,name:t("Programme semi","Half-marathon plan"),raceName:PROG_RACE_NAME,start:PROG_START,race:PROG_RACE,n:PROG_N,build:progBuild,goal:PROG_GOAL,context:PROG_CONTEXT,restDay:5,
+    weeks:PROG_WEEKS.map(r=>({w:r[0],label:r[1],vol:r[2],key:r[3]}))};
+}
+function curProg(){
+  if(S.set.prog===PROG_ID) return legacyProg();
+  if(S.set.prog&&S.set.progCfg&&S.set.prog===`c-${S.set.progCfg.tpl}-${S.set.progCfg.race}`) return customProg();
+  return null;
+}
+
+/* ---- assistant de choix du programme ---- */
+function openProgWizard(fresh){
+  if(fresh||!S.wiz){ const c=S.set.progCfg; S.wiz=c?JSON.parse(JSON.stringify(c)):tplDefaults(); }
+  const sh=document.querySelector("#sheet-root .sheet"), top=sh?sh.scrollTop:0;
+  const W=S.wiz, T=TPLS[W.tpl], sports=tplSports(W.tpl);
+  const others=["renfo","basket","natation","velo","course","autre"].filter(k=>!sports.includes(k));
+  const ex=k=>(W.extras||[]).find(x=>x.sport===k)||{sport:k,days:[],dur:k==="basket"?90:k==="renfo"?45:60};
+  const {html:prevHtml,err}=wizPrev(W);
+  sheet(`<h2>${t("Choisir un programme","Choose a plan")}</h2>
+  <p class="muted" style="margin:0">${t("Le programme s'adapte à ton temps disponible, à tes jours d'entraînement et aux autres sports que tu veux garder.","The plan adapts to your available time, your training days and the other sports you want to keep.")}</p>
+  <div class="tpl-grid">${TPL_K.map(k=>`<button class="tpl" data-wz-tpl="${k}" aria-pressed="${W.tpl===k}"><span>${TPL_ICON[k]}</span><b>${tplName(k)}</b><small>${TPLS[k].dist}</small></button>`).join("")}</div>
+  <div class="fields">
+    <div class="f"><label for="wz-race">${t("Date de la course","Race date")}</label><input id="wz-race" type="date" value="${W.race}" min="${dayKey(addDays(today0(),7))}"></div>
+    <div class="f"><label for="wz-name">${t("Nom de la course (facultatif)","Race name (optional)")}</label><input id="wz-name" type="text" maxlength="60" placeholder="${tplName(W.tpl)}" value="${esc(W.name||"")}"></div>
+    <div class="f"><label for="wz-level">${t("Niveau","Level")}</label><select id="wz-level">${LEVELS().map((l,i)=>`<option value="${i}" ${W.level===i?"selected":""}>${l}</option>`).join("")}</select></div>
+    <div class="f"><label for="wz-hours">${t("Heures par semaine au pic","Hours per week at peak")}</label><input id="wz-hours" type="number" min="2" max="25" step="0.5" inputmode="decimal" value="${W.hours}"><span class="hint" id="wz-hint">${t(`Conseillé : ${hFmt(T.hrs[0])}–${hFmt(T.hrs[2])} h · les premières semaines démarrent plus bas`,`Suggested: ${T.hrs[0]}–${T.hrs[2]} h · early weeks start lower`)}</span></div>
+  </div>
+  <div class="stack" style="gap:6px"><b style="font-size:14px">${t("Temps disponible par jour (— = repos)","Time available per day (— = rest)")}</b>
+    <div class="wz-days">${DAYS().map((d,i)=>`<label class="tg"><span data-wz-day="${i}">${d}${W.longDay===i?" ★":""}</span><select id="wz-av-${i}">${AV_OPTS.map(m=>`<option value="${m}" ${+W.avail[i]===m?"selected":""}>${m?hm(m):"—"}</option>`).join("")}</select></label>`).join("")}</div>
+    <div class="f"><label for="wz-long">${t("Jour de la sortie longue ★","Long-session day ★")}</label><select id="wz-long">${DAYS_L().map((d,i)=>`<option value="${i}" ${W.longDay===i?"selected":""}>${d}</option>`).join("")}</select></div>
+  </div>
+  <div class="stack" style="gap:6px"><b style="font-size:14px">${t("Autres sports à garder (touche les jours)","Other sports to keep (tap the days)")}</b>
+    ${others.map(k=>{ const x=ex(k); return `<div class="wz-ex"><span class="wz-exn"><i class="sw" style="background:${sc(k)}"></i>${SPORTS[k].l}</span><div class="wz-exd">${DAYS().map((d,i)=>`<button class="chip" data-wz-ex="${k}|${i}" aria-pressed="${x.days.includes(i)}">${d.slice(0,2)}</button>`).join("")}</div><select id="wz-exd-${k}" aria-label="${t("Durée","Duration")}">${[30,45,60,75,90,120].map(m=>`<option value="${m}" ${x.dur===m?"selected":""}>${hm(m)}</option>`).join("")}</select></div>`; }).join("")}
+  </div>
+  <div class="wz-prev">${prevHtml}</div>
+  <button class="btn small ghost" id="prog-load-legacy" style="align-self:flex-start">${t("Ou : programme détaillé Semi Boucle de Seine 2027","Or: detailed Boucle de Seine Half 2027 plan")}</button>
+  <div class="row wz-foot" style="gap:8px">
+    <button class="btn" data-wz-go ${err?"disabled":""}>${curProg()?.custom?t("Mettre à jour mon programme","Update my plan"):t("Créer mon programme","Create my plan")}</button>
+    <button class="btn ghost" data-close>${t("Annuler","Cancel")}</button>
+  </div>`);
+  const sh2=document.querySelector("#sheet-root .sheet"); if(sh2) sh2.scrollTop=top;
+}
+function wizPrev(W){
+  const T=TPLS[W.tpl];
+  let prev=null, err="";
+  if(W.race<=dayKey(today0())) err=t("Choisis une date de course dans le futur.","Pick a race date in the future.");
+  else { try{ const P=customProg({...W,start:wizStart(W)}); const tk=dayKey(today0()); const its=P.build().filter(p=>p.date>=tk); const peak=Math.max(...P.weeks.filter(w=>w.ph!=="race").map(w=>w.min),0);
+    prev={P,rest:tplBuild({...W,start:wizStart(W)}).rest.map(d=>DAYS_L()[d]).join(", "),n:its.length,perW:hFmt((its.length/Math.max(1,P.weeks.filter(w=>w.mon>=dayKey(startOfWeek(today0()))).length)).toFixed(1)),peak}; }catch(e){ err=String(e.message||e); } }
+  const phases=prev?Object.entries(prev.P.weeks.reduce((a,w)=>{ const l=w.ph==="rec"||w.ph==="race"?null:w.label; if(l) a[l]=(a[l]||0)+1; return a; },{})).map(([l,n])=>`${l} ${n}`).join(" · "):"";
+  return {err,html:err?`<b>${err}</b>`:`<b>${t(`${prev.P.n} semaines`,`${prev.P.n} weeks`)}</b> · ${phases}<br>${t(`≈ ${prev.perW} séances/semaine, pic ≈ ${hm(prev.peak)} (avec tes autres sports), repos : ${prev.rest}.`,`≈ ${prev.perW} sessions/week, peak ≈ ${hm(prev.peak)} (incl. your other sports), rest: ${prev.rest}.`)}
+    ${prev.P.start>dayKey(today0())?`<br>${t(`Début le ${fmtDate(parseDay(prev.P.start))} (préparation plafonnée à ${T.max} semaines).`,`Starts on ${fmtDate(parseDay(prev.P.start))} (build capped at ${T.max} weeks).`)}`:""}
+    ${prev.P.warn.map(w=>`<br>⚠️ ${w}`).join("")}`};
+}
+/* début : on garde la date de départ d'un programme existant pour la même course, sinon cette semaine */
+function wizStart(W){
+  const c=S.set.progCfg;
+  if(c&&c.tpl===W.tpl&&c.race===W.race&&c.start) return c.start;
+  return dayKey(startOfWeek(today0()));
+}
+function wizChange(id,v,el){
+  const W=S.wiz; if(!W) return;
+  if(id==="wz-race") W.race=v||W.race;
+  else if(id==="wz-name") W.name=v.trim().slice(0,60);
+  else if(id==="wz-level"){ const old=TPLS[W.tpl].hrs[W.level]; W.level=+v; if(W.hours===old) W.hours=TPLS[W.tpl].hrs[W.level]; }
+  else if(id==="wz-hours") W.hours=Math.max(2,Math.min(25,parseFloat(String(v).replace(",","."))||W.hours));
+  else if(id==="wz-long") W.longDay=+v;
+  else if(id.startsWith("wz-av-")){ W.avail=W.avail.slice(); W.avail[+id.slice(6)]=+v; }
+  else if(id.startsWith("wz-exd-")){ const k=id.slice(7); W.extras=(W.extras||[]).filter(x=>x.sport!==k||x.days.length); const x=W.extras.find(x=>x.sport===k); if(x) x.dur=+v; else W.extras.push({sport:k,days:[],dur:+v,int:k==="basket"?"intense":k==="renfo"?"modere":"facile"}); }
+  wizRefresh();
+}
+/* mise à jour sur place (sans reconstruire la fenêtre, pour ne pas perdre un appui en cours) */
+function wizRefresh(){
+  const W=S.wiz, {html,err}=wizPrev(W), q=x=>document.querySelector("#sheet-root "+x);
+  if(!q(".wz-prev")) return openProgWizard();
+  q(".wz-prev").innerHTML=html; const go=q("[data-wz-go]"); if(go) go.disabled=!!err;
+  const h=q("#wz-hours"); if(h&&+h.value!==W.hours) h.value=W.hours;
+  document.querySelectorAll("#sheet-root [data-wz-day]").forEach(el=>{ const i=+el.dataset.wzDay; el.textContent=DAYS()[i]+(W.longDay===i?" ★":""); });
+}
+function wizTpl(k){
+  const W=S.wiz, old=TPLS[W.tpl];
+  const raceWasDefault=W.race===dayKey(addDays(startOfWeek(today0()),old.def*7-1));
+  const hoursWasDefault=W.hours===old.hrs[W.level];
+  W.tpl=k; const T=TPLS[k];
+  if(raceWasDefault) W.race=dayKey(addDays(startOfWeek(today0()),T.def*7-1));
+  if(hoursWasDefault) W.hours=T.hrs[W.level];
+  const sp=tplSports(k); W.extras=(W.extras||[]).filter(x=>!sp.includes(x.sport));
+  openProgWizard();
+}
+function wizEx(k,d){
+  const W=S.wiz; W.extras=(W.extras||[]).map(x=>({...x,days:x.days.slice()}));
+  let x=W.extras.find(x=>x.sport===k);
+  if(!x){ x={sport:k,days:[],dur:k==="basket"?90:k==="renfo"?45:60,int:k==="basket"?"intense":k==="renfo"?"modere":"facile"}; W.extras.push(x); }
+  x.days=x.days.includes(d)?x.days.filter(y=>y!==d):[...x.days,d].sort();
+  openProgWizard();
+}
+async function wizGo(){
+  const W=S.wiz; if(!W||W.race<=dayKey(today0())) return;
+  const cfg={...W,start:wizStart(W),extras:(W.extras||[]).filter(x=>x.days.length)};
+  const P=customProg(cfg); closeSheet();
+  await progLoad(undefined,P);
 }
 
 /* ============ coach (bot) ============ */
@@ -1678,7 +2045,7 @@ Date du jour : ${dayKey(td)} (${DAYS_L()[(td.getDay()+6)%7]}).
 Zones cardio (FC max ${S.set.hrMax}${S.set.hrAuto!==false?" détectée automatiquement":""}) : ${ZONES().map(z=>`Z${z.z} ${z.l} ${z.lo==null?"<"+(z.hi+1):z.lo+"–"+z.hi}`).join(", ")} bpm. Donne toujours la zone et la plage de FC cible quand tu proposes une séance.
 Profil : FC max ${S.set.hrMax}, FC repos ${S.set.hrRest}, objectif ${S.set.goalH} h/semaine, jour de repos ${DAYS_L()[S.set.restDay??0]}, objectif principal : ${S.set.goal||"non précisé"}.
 Séances par semaine souhaitées : ${Object.entries(S.set.targets||{}).map(([k,v])=>`${SPORTS[k].l} ${v}`).join(", ")||"automatique"}.
-${S.set.context?`Contexte et programme de l'athlète (prioritaires : tes conseils doivent les respecter) :\n${S.set.context}\n`:""}${progInfo()?`Position dans le programme : semaine ${progInfo().w}/${PROG_N}, phase ${progInfo().phase}, ≈ ${progInfo().vol} km de course prévus, J-${progInfo().days} avant la course.\n`:""}Indicateurs : forme CTL ${m.ctl.toFixed(0)}, fatigue ATL ${m.atl.toFixed(0)}, fraîcheur TSB ${m.tsb.toFixed(0)}, ratio aigu/chronique ${m.acwr!=null?m.acwr.toFixed(2):"n/d"}, état « ${W.st.l} », historique ${m.histDays} jours.
+${S.set.context?`Contexte et programme de l'athlète (prioritaires : tes conseils doivent les respecter) :\n${S.set.context}\n`:""}${progInfo()?`Position dans le programme « ${progInfo().name} » : semaine ${progInfo().w}/${progInfo().n}, phase ${progInfo().phase}, ${progInfo().sumFr}, J-${progInfo().days} avant la course.\n`:""}Indicateurs : forme CTL ${m.ctl.toFixed(0)}, fatigue ATL ${m.atl.toFixed(0)}, fraîcheur TSB ${m.tsb.toFixed(0)}, ratio aigu/chronique ${m.acwr!=null?m.acwr.toFixed(2):"n/d"}, état « ${W.st.l} », historique ${m.histDays} jours.
 Bilan de la semaine (calculé par l'app) : ${W.verdict} ${W.lines.join(" ")}
 Dernière séance (calculée par l'app) : ${A?`${A.a.date.slice(0,10)} ${SPORTS[A.a.sport].l} « ${A.a.title} ». ${A.verdict} ${A.lines.join(" ")} ${A.next}`:"aucune"}
 14 dernières séances :
@@ -2083,10 +2450,10 @@ function viewPlan(){
   return `<div class="stack">
     <div class="row between">
       <div class="weeknav"><button class="btn small ghost" data-week="-1" aria-label="${t("Semaine précédente","Previous week")}">←</button><div><h2>${label}</h2><div class="muted" style="font-size:13px">${fmtDate(mon)} – ${fmtDate(addDays(mon,6))} · ${t("prévu","planned")} ${String(Math.round(totPlan/60*10)/10).replace(".",DEC())} h · ${t("réalisé","done")} ${fmtH(totDone*60)} h</div></div><button class="btn small ghost" data-week="1" aria-label="${t("Semaine suivante","Next week")}">→</button></div>
-      <div class="row"><button class="btn small ghost" id="sel-start" aria-pressed="${!!S.sel}">☑ ${t("Sélectionner","Select")}</button><button class="btn small ghost" id="manage-plan">🧹 ${t("Gérer le planning","Manage plan")}</button><button class="btn small ghost" id="ics-week">📅 ${t("Calendrier","Calendar")}</button><button class="btn small ghost" id="clear-week">${t("Vider la semaine","Clear week")}</button><button class="btn small" id="gen-week">${t("Proposer ma semaine","Suggest my week")}</button></div>
+      <div class="row"><button class="btn small ghost" id="sel-start" aria-pressed="${!!S.sel}">☑ ${t("Sélectionner","Select")}</button><button class="btn small ghost" id="manage-plan">🧹 ${t("Gérer le planning","Manage plan")}</button><button class="btn small ghost" id="prog-pick">🎯 ${t("Programmes","Plans")}</button><button class="btn small ghost" id="ics-week">📅 ${t("Calendrier","Calendar")}</button><button class="btn small ghost" id="clear-week">${t("Vider la semaine","Clear week")}</button><button class="btn small" id="gen-week">${t("Proposer ma semaine","Suggest my week")}</button></div>
     </div>
     <p class="hint" style="margin:0">${t(`« Proposer ma semaine » répartit tes sports selon tes 4 dernières semaines, avec un jour de repos (${DAYS_L()[S.set.restDay??0]}), une séance intense par sport d'endurance et la sortie longue le week-end. La charge baisse automatiquement si tu es fatigué.`,`“Suggest my week” spreads your sports based on your last 4 weeks, with a rest day (${DAYS_L()[S.set.restDay??0]}), one hard session per endurance sport and the long session at the weekend. Load drops automatically when you're fatigued.`)}</p>
-    ${(()=>{ const I=progInfo(addDays(mon,3)); return I?`<div class="banner"><span><b>${t(`Programme semi — semaine ${I.w}/${PROG_N} · ${I.phase}`,`Half-marathon plan — week ${I.w}/${PROG_N} · ${I.phase}`)}</b> ${t(`≈ ${I.vol} km de course · séance clé : ${esc(I.key)}`,`≈ ${I.vol} km running · key session: ${esc(I.key)}`)}</span></div>`:""; })()}
+    ${(()=>{ const I=progInfo(addDays(mon,3)); return I?`<div class="banner"><span><b>${esc(I.name)} — ${t(`semaine ${I.w}/${I.n} · ${I.phase}`,`week ${I.w}/${I.n} · ${I.phase}`)}</b> ${I.sum}${I.key?` · ${t("séance clé","key session")} : ${esc(I.key)}`:""}</span></div>`:""; })()}
     ${S.sel?`<p class="hint" style="margin:0">${t("Touche les séances à sélectionner, puis choisis une action en bas de l'écran.","Tap sessions to select them, then pick an action at the bottom of the screen.")}</p>`:""}
     <div class="days">${cols}</div>
     ${selBar()}
@@ -2162,10 +2529,12 @@ function viewSet(){
       <div class="f full"><label for="s-goal">${t("Objectif principal (pour le coach IA)","Main goal (for the AI coach)")}</label><input id="s-goal" type="text" placeholder="${t("ex. Triathlon distance olympique en juin, 10 km sous 45 min","e.g. Olympic-distance triathlon in June, 10K under 45 min")}" value="${esc(s.goal)}"></div>
     </div></section>
   <section class="card stack"><h2>${t("Programme & contexte du coach","Plan & coach context")}</h2>
-    <p class="muted" style="margin:0">${S.set.prog===PROG_ID?t("Programme Semi Boucle de Seine 2027 actif : 19 semaines du 9 nov. au 21 mars, repos le samedi.","Boucle de Seine Half 2027 plan active: 19 weeks from Nov 9 to Mar 21, rest on Saturday."):t("Charge le programme Semi Boucle de Seine 2027 : il remplit ton planning jusqu'au 21 mars, règle ton objectif et ton jour de repos (samedi). Tes séances ajoutées à la main sont conservées.","Load the Boucle de Seine Half 2027 plan: it fills your schedule until March 21 and sets your goal and rest day (Saturday). Sessions you added by hand are kept.")}</p>
-    <div class="row"><button class="btn small" id="prog-load">${S.set.prog===PROG_ID?t("Recharger le programme","Reload the plan"):t("Charger le programme Semi Boucle de Seine 2027","Load the Boucle de Seine Half 2027 plan")}</button>${S.set.prog===PROG_ID?`<button class="btn small ghost" id="prog-remove">${t("Retirer le programme","Remove the plan")}</button>`:""}</div>
+    ${(()=>{ const P=curProg(); if(!P) return `<p class="muted" style="margin:0">${t("Choisis un programme (10 km, semi, marathon, triathlon S ou M, 70.3, premier Ironman, 100 km vélo) : il s'adapte à ton temps, à tes jours dispo et à tes autres sports, et remplit ton planning jusqu'à la course. Tes séances ajoutées à la main sont conservées.","Pick a plan (10K, half, marathon, sprint or Olympic triathlon, 70.3, first Ironman, 100 km ride): it adapts to your time, available days and other sports, and fills your schedule up to race day. Sessions you added by hand are kept.")}</p>
+    <div class="row"><button class="btn small" id="prog-pick">${t("Choisir un programme","Choose a plan")}</button></div>`;
+      return `<p class="muted" style="margin:0">${P.legacy?t("Programme Semi Boucle de Seine 2027 actif : 19 semaines du 9 nov. au 21 mars, repos le samedi.","Boucle de Seine Half 2027 plan active: 19 weeks from Nov 9 to Mar 21, rest on Saturday."):t(`Programme actif : ${esc(P.name)} — ${P.n} semaines du ${fmtDate(parseDay(P.start))} au ${fmtDate(parseDay(P.race))}, ≈ ${hFmt(P.cfg.hours)} h/semaine au pic, repos le ${DAYS_L()[P.restDay]}.`,`Active plan: ${esc(P.name)} — ${P.n} weeks from ${fmtDate(parseDay(P.start))} to ${fmtDate(parseDay(P.race))}, ≈ ${P.cfg.hours} h/week at peak, rest on ${DAYS_L()[P.restDay]}.`)}</p>
+    <div class="row">${P.custom?`<button class="btn small" id="prog-pick">${t("Ajuster (temps, jours, sports)","Adjust (time, days, sports)")}</button>`:""}<button class="btn small ${P.custom?"ghost":""}" id="prog-load">${t("Recharger le programme","Reload the plan")}</button><button class="btn small ghost" id="prog-new">${t("Changer de programme","Switch plan")}</button><button class="btn small ghost" id="prog-remove">${t("Retirer le programme","Remove the plan")}</button></div>`; })()}
     <div class="fields"><div class="f full"><label for="s-context">${t("Contexte pour le coach (objectif, allures, règles, alimentation)","Context for the coach (goal, paces, rules, nutrition)")}</label><textarea id="s-context" rows="10" placeholder="${t("Colle ici ton contexte d'entraînement : le coach IA le respecte en priorité.","Paste your training context here: the AI coach follows it first.")}">${esc(S.set.context||"")}</textarea></div></div>
-    <div class="row"><button class="btn small ghost" id="ctx-default">${t("Remettre le contexte du programme","Reset to the plan context")}</button><span class="hint">${t("Mets ce texte à jour après le test 10 km du 24 janvier.","Update this text after the January 10K test.")}</span></div>
+    <div class="row"><button class="btn small ghost" id="ctx-default">${t("Remettre le contexte du programme","Reset to the plan context")}</button>${S.set.prog===PROG_ID?`<span class="hint">${t("Mets ce texte à jour après le test 10 km du 24 janvier.","Update this text after the January 10K test.")}</span>`:""}</div>
   </section>
   <section class="card stack"><h2>${t("Rappels & calendrier","Reminders & calendar")}</h2>
     ${window.__STANDALONE?pushBlock():""}
@@ -2378,7 +2747,7 @@ async function runAI(){
 Date du jour : ${dayKey(td)}.
 Zones cardio : ${ZONES().map(z=>`Z${z.z} ${z.lo==null?"<"+(z.hi+1):z.lo+"–"+z.hi}`).join(", ")} bpm.
 Athlète : FC max ${S.set.hrMax}, FC repos ${S.set.hrRest}, objectif ${S.set.goalH} h/semaine. Objectif principal : ${S.set.goal||"non précisé"}.
-${S.set.context?`Contexte et programme de l'athlète (prioritaires) :\n${S.set.context}\n`:""}${progInfo()?`Position dans le programme : semaine ${progInfo().w}/${PROG_N}, phase ${progInfo().phase}, J-${progInfo().days} avant la course.\n`:""}Indicateurs : forme CTL ${m.ctl.toFixed(0)}, fatigue ATL ${m.atl.toFixed(0)}, fraîcheur TSB ${m.tsb.toFixed(0)}, ratio charge aiguë/chronique ${m.acwr?m.acwr.toFixed(2):"n/d"}, historique ${m.histDays} jours.
+${S.set.context?`Contexte et programme de l'athlète (prioritaires) :\n${S.set.context}\n`:""}${progInfo()?`Position dans le programme « ${progInfo().name} » : semaine ${progInfo().w}/${progInfo().n}, phase ${progInfo().phase}, J-${progInfo().days} avant la course.\n`:""}Indicateurs : forme CTL ${m.ctl.toFixed(0)}, fatigue ATL ${m.atl.toFixed(0)}, fraîcheur TSB ${m.tsb.toFixed(0)}, ratio charge aiguë/chronique ${m.acwr?m.acwr.toFixed(2):"n/d"}, historique ${m.histDays} jours.
 Volume des 6 dernières semaines :
 ${weeks.join("\n")}
 12 dernières séances :
@@ -2412,6 +2781,9 @@ document.addEventListener("click",async e=>{
   if(el.dataset.selPlan){ const id=el.dataset.selPlan; S.sel.has(id)?S.sel.delete(id):S.sel.add(id); render(); return; }
   if(el.dataset.mg){ const g=planGroups().find(x=>x[0]===el.dataset.mg); if(!g) return; if(g[0]==="future"&&!el.dataset.confirm){ el.dataset.confirm="1"; el.textContent=t(`Confirmer (${g[2].length})`,`Confirm (${g[2].length})`); el.classList.add("danger"); return; }
     closeSheet(); await delPlansUndoable(g[2],t(`${g[2].length} séance(s) supprimée(s) : ${g[1].toLowerCase()}.`,`${g[2].length} session(s) deleted: ${g[1].toLowerCase()}.`)); render(); return; }
+  if(el.dataset.wzTpl){ wizTpl(el.dataset.wzTpl); return; }
+  if(el.dataset.wzEx){ const [k,d]=el.dataset.wzEx.split("|"); wizEx(k,+d); return; }
+  if(el.dataset.wzGo!==undefined){ el.disabled=true; try{ await wizGo(); }catch(err){ toast(t("Chargement interrompu : réessaie.","Loading interrupted: try again.")); render(); } return; }
   if(el.dataset.progMode){ const m=el.dataset.progMode; closeSheet(); try{ await progLoad(m); }catch(err){ toast(t("Chargement interrompu : réessaie.","Loading interrupted: try again.")); render(); } return; }
   if(el.dataset.shift){ const p=S.editingPlan; if(!p) return; closeSheet(); await shiftPlans([p],+el.dataset.shift); render(); return; }
   if(el.dataset.range){ const k=el.dataset.range; S.range = k==="custom" ? {k,from:S.range.from||dayKey(addDays(today0(),-90)),to:S.range.to||dayKey(today0())} : {k}; saveRange(); render(); return; }
@@ -2464,9 +2836,12 @@ document.addEventListener("click",async e=>{
       if(!list.length){ toast(t("Aucune séance dans cette période.","No sessions in this range.")); break; }
       closeSheet(); await delPlansUndoable(list,t(`${list.length} séance(s) supprimée(s) du ${fmtDate(parseDay(a))} au ${fmtDate(parseDay(b))}.`,`${list.length} session(s) deleted from ${fmtDate(parseDay(a))} to ${fmtDate(parseDay(b))}.`)); render(); break; }
     case "gen-week": el.disabled=true; await genWeek(S.weekOff); el.disabled=false; break;
-    case "prog-load": el.disabled=true; el.textContent=t("Chargement…","Loading…"); try{ await progLoad(); }catch(err){ toast(t("Chargement interrompu : réessaie.","Loading interrupted: try again.")); } render(); break;
+    case "prog-pick": openProgWizard(true); break;
+    case "prog-new": S.wiz=tplDefaults(); openProgWizard(); break;
+    case "prog-load-legacy": closeSheet(); try{ await progLoad(undefined,legacyProg()); }catch(err){ toast(t("Chargement interrompu : réessaie.","Loading interrupted: try again.")); } render(); break;
+    case "prog-load": el.disabled=true; el.textContent=t("Chargement…","Loading…"); try{ await progLoad(undefined,curProg()||legacyProg()); }catch(err){ toast(t("Chargement interrompu : réessaie.","Loading interrupted: try again.")); } render(); break;
     case "prog-remove": if(!el.dataset.confirm){ el.dataset.confirm="1"; el.textContent=t("Confirmer le retrait","Confirm removal"); el.classList.add("danger"); break; } el.disabled=true; await progRemove(); break;
-    case "ctx-default": S.set.context=PROG_CONTEXT; saveSettings(); render(); toast(t("Contexte du programme remis.","Plan context restored.")); break;
+    case "ctx-default": S.set.context=(curProg()||legacyProg()).context; S.set.ctxAuto=S.set.context; saveSettings(); render(); toast(t("Contexte du programme remis.","Plan context restored.")); break;
     case "coach-gen": { el.disabled=true; const off=((today0().getDay()+6)%7)>=5?1:0; const n=await genWeek(off); if(n){ S.weekOff=off; S.tab="plan"; render(); } else el.disabled=false; break; }
     case "clear-week": {
       const mon=addDays(startOfWeek(today0()),S.weekOff*7); const keys=[0,1,2,3,4,5,6].map(i=>dayKey(addDays(mon,i)));
@@ -2479,6 +2854,7 @@ document.addEventListener("click",async e=>{
 });
 document.addEventListener("change",e=>{
   const id=e.target.id; const v=e.target.value;
+  if(id&&id.startsWith("wz-")){ wizChange(id,v,e.target); return; }
   if(id==="file-in"){ importFiles([...e.target.files]); e.target.value=""; return; }
   if(id==="evo-sport"){ S.evoSport=v; render(); return; }
   if(id==="evo-metric"){ S.evoMetric=v; render(); return; }
