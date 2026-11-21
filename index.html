@@ -1427,8 +1427,8 @@ function selBar(){
 
 async function genWeek(off){
   const mon=addDays(startOfWeek(today0()),off*7); const keys=[0,1,2,3,4,5,6].map(i=>dayKey(addDays(mon,i)));
-  if(S.plans.some(p=>p.prog&&keys.includes(p.date))){ toast(t("Cette semaine suit ton programme semi : modifie directement les séances.","This week follows your half-marathon plan: edit the sessions directly.")); return 0; }
-  const gen=suggestWeek(mon,ACTS()).filter(p=>p.date>=dayKey(today0()));
+  if(S.plans.some(p=>p.prog&&keys.includes(p.date))){ toast(t("Cette semaine suit ton programme : modifie directement les séances.","This week follows your training plan: edit the sessions directly.")); return 0; }
+  const gen=applyRaces(suggestWeek(mon,ACTS()),{add:false}).filter(p=>p.date>=dayKey(today0()));
   if(!gen.length){ toast(t("Cette semaine est passée : avance d'une semaine pour planifier.","This week is over: move ahead a week to plan.")); return 0; }
   for(const p of S.plans.filter(p=>p.gen&&keys.includes(p.date)&&p.date>=dayKey(today0()))) await delPlan(p.id);
   for(const p of gen) await putPlan({...p,id:"p"+uid()});
@@ -1586,13 +1586,13 @@ function progInfo(d=today0()){
    sont gardées ou remplacées selon le choix ; les anciennes séances d'autres programmes sont retirées. */
 function progItems(P=curProg()||legacyProg()){
   const tk=dayKey(today0()), n={};
-  return P.build().filter(p=>p.date>=tk).map(p=>{ const k=`${p.date}-${p.sport}`; n[k]=(n[k]||0)+1; return {...p,prog:P.id,id:`prog-${P.id}-${k}-${n[k]}`}; });
+  return applyRaces(P.build()).filter(p=>p.date>=tk).map(p=>{ const k=`${p.date}-${p.sport}`; n[k]=(n[k]||0)+1; return {...p,prog:P.id,id:`prog-${P.id}-${k}-${n[k]}`}; });
 }
 function progConflicts(items){
   const tk=dayKey(today0());
   return S.plans.filter(p=>p.date>=tk&&!p.prog&&!p.gen&&!String(p.id).startsWith("dp")&&items.some(i=>i.date===p.date&&i.sport===p.sport));
 }
-async function progLoad(mode,P){
+async function progLoad(mode,P,quiet){
   if(S.progLoading) return;
   P=P||S.progNext||curProg()||legacyProg();
   const items=progItems(P);
@@ -1603,10 +1603,10 @@ async function progLoad(mode,P){
   try{
     const tk=dayKey(today0()), dates=new Set(items.map(p=>p.date)), keepIds=new Set(items.map(p=>p.id));
     let put=items;
-    if(mode==="mine"){ const busy=new Set(conflicts.map(c=>`${c.date}|${c.sport}`)); put=items.filter(i=>!busy.has(`${i.date}|${i.sport}`)); }
+    if(mode==="mine"){ const busy=new Set(conflicts.map(c=>`${c.date}|${c.sport}`)); put=items.filter(i=>i.race||!busy.has(`${i.date}|${i.sport}`)); }
     const putIds=new Set(put.map(p=>p.id));
     const drop=S.plans.filter(p=>p.date>=tk&&!putIds.has(p.id)&&(
-      p.prog ||
+      p.prog || (p.race&&!p.prog) ||
       (p.gen&&dates.has(p.date)) ||
       (mode==="replace"&&conflicts.includes(p))));
     for(let i=0;i<drop.length;i+=20) await Promise.all(drop.slice(i,i+20).map(p=>delPlan(p.id)));
@@ -1619,7 +1619,7 @@ async function progLoad(mode,P){
     if(!S.set.context||prevAuto||S.set.context===PROG_CONTEXT||/^Objectif : battre mon record au semi \(1:20:26, mars 2024\) au Semi de Paris/.test(S.set.context)){ S.set.context=P.context; S.set.ctxAuto=P.context; }
     saveSettings(); render();
     const kept=items.length-put.length;
-    toast((t(`Programme chargé : ${put.length} séances jusqu'au ${fmtDate(parseDay(P.race))}`,`Plan loaded: ${put.length} sessions until ${fmtDate(parseDay(P.race))}`)+(kept?t(`, ${kept} remplacée(s) par tes séances`,`, ${kept} replaced by your own`):"")+(dups?t(`, ${dups} doublon(s) retiré(s)`,`, ${dups} duplicate(s) removed`):"")+".").replace(/\.\.$/,"."));
+    if(!quiet) toast((t(`Programme chargé : ${put.length} séances jusqu'au ${fmtDate(parseDay(P.race))}`,`Plan loaded: ${put.length} sessions until ${fmtDate(parseDay(P.race))}`)+(kept?t(`, ${kept} remplacée(s) par tes séances`,`, ${kept} replaced by your own`):"")+(dups?t(`, ${dups} doublon(s) retiré(s)`,`, ${dups} duplicate(s) removed`):"")+".").replace(/\.\.$/,"."));
   } finally { S.progLoading=false; }
 }
 function openProgConflicts(items,conflicts){
@@ -1655,7 +1655,9 @@ async function removeDuplicatePlans(silent){
 async function progRemove(){
   const tk=dayKey(today0()); const ps=S.plans.filter(p=>p.prog&&p.date>=tk);
   for(const p of ps) await delPlan(p.id);
-  S.set.prog=null; saveSettings(); render();
+  S.set.prog=null; saveSettings();
+  if(raceList().length) await raceSync(false);
+  render();
   toast(t(`${ps.length} séances du programme retirées.`,`${ps.length} plan sessions removed.`));
 }
 function progCard(){
@@ -2020,6 +2022,171 @@ async function wizGo(){
   await progLoad(undefined,P);
 }
 
+/* ============ compétitions prévues ============
+   Chaque compétition (S.set.races) modifie le planning autour de sa date :
+   affûtage avant (A : 7 j, B : 3 j, C : veille seulement), activation la veille,
+   la course remplace les séances du jour et la sortie longue proche, récupération après
+   (durée selon le type et la durée de l'effort). Avec un programme actif, les ajustements
+   sont appliqués à la génération du programme ; sinon, la course et ses séances sont ajoutées
+   au planning et les séances proposées automatiquement sont adaptées. */
+const RACE_TYPES={
+  run_5k:{s:"course",fr:"Course 5 km",en:"5K run",dur:25,rec:2},
+  run_10k:{s:"course",fr:"Course 10 km",en:"10K run",dur:50,rec:3},
+  run_half:{s:"course",fr:"Semi-marathon",en:"Half marathon",dur:110,rec:6},
+  run_marathon:{s:"course",fr:"Marathon",en:"Marathon",dur:240,rec:12},
+  trail:{s:"course",fr:"Trail",en:"Trail run",dur:150,rec:null},
+  tri_s:{s:"autre",fr:"Triathlon S",en:"Sprint triathlon",dur:80,rec:3},
+  tri_m:{s:"autre",fr:"Triathlon M",en:"Olympic triathlon",dur:150,rec:5},
+  tri_703:{s:"autre",fr:"Half Ironman 70.3",en:"Half Ironman 70.3",dur:360,rec:9},
+  ironman:{s:"autre",fr:"Ironman",en:"Ironman",dur:780,rec:16},
+  bike:{s:"velo",fr:"Course vélo / cyclosportive",en:"Bike race / sportive",dur:240,rec:null},
+  swim:{s:"natation",fr:"Natation / eau libre",en:"Swim / open water",dur:60,rec:1},
+  other:{s:"autre",fr:"Autre compétition",en:"Other event",dur:90,rec:null}
+};
+const RACE_PRIO=()=>({A:t("A — objectif majeur (7 j d'affûtage)","A — main goal (7-day taper)"),B:t("B — importante (3 j allégés)","B — important (3 lighter days)"),C:t("C — préparation (veille facile)","C — tune-up (easy day before)")});
+const raceTypeName=k=>RACE_TYPES[k]?t(RACE_TYPES[k].fr,RACE_TYPES[k].en):"";
+const raceName=r=>r.name||raceTypeName(r.type);
+function raceList(){ return (S.set.races||[]).filter(r=>r&&r.id&&r.date&&RACE_TYPES[r.type]).sort((a,b)=>a.date.localeCompare(b.date)); }
+function raceRecDays(r){
+  const T=RACE_TYPES[r.type], d=+r.dur||T.dur;
+  let n;
+  if(T.rec!=null) n=Math.round(T.rec*Math.sqrt(d/T.dur));
+  else if(T.s==="velo") n=d<=120?1:d<=300?3:4;
+  else if(T.s==="natation") n=1;
+  else n=d<=35?2:d<=75?3:d<=130?5:d<=200?8:d<=400?11:16;
+  if(r.prio==="C") n=Math.ceil(n*.6);
+  return Math.max(1,n);
+}
+const racePre=r=>r.prio==="A"?7:r.prio==="C"?1:3;
+const isHardP=p=>p.int==="intense"||(p.int==="modere"&&/clé|key|seuil|threshold|×|allure|pace|tempo|fartlek|rappel|sharpener|pma|vo2/i.test(p.title||""));
+const isLongP=p=>/sortie longue|long run|long ride|footing long|steady run/i.test(p.title||"");
+function easyTitle(sport,dur){
+  const D=hm(dur);
+  return sport==="course"?t(`Footing EF ${D}`,`Easy run ${D}`):sport==="velo"?t(`Vélo endurance ${D}`,`Endurance ride ${D}`):sport==="natation"?t(`Natation souple ${D}`,`Easy swim ${D}`):sport==="renfo"?t(`Renfo léger ${D}`,`Light strength ${D}`):`${SPORTS[sport].l} ${t("facile","easy")} ${D}`;
+}
+/* applique toutes les compétitions à une liste de séances planifiées.
+   add : ajoute la course, l'activation de la veille (et une récup en mode autonome) */
+function applyRaces(items,{add=true,standalone=false}={}){
+  let out=items.slice();
+  for(const r of raceList()){
+    const T=RACE_TYPES[r.type], rd=parseDay(r.date), pre=racePre(r), rec=raceRecDays(r), nm=raceName(r), dur=+r.dur||T.dur;
+    const tag=t(` Ajusté pour : ${nm}.`,` Adjusted for: ${nm}.`);
+    const off=p=>Math.round((parseDay(p.date)-rd)/864e5);
+    const ed=(p,o)=>({...p,...o,notes:((p.notes||"")+(String(p.notes||"").includes(tag.trim())?"":tag)).trim()});
+    out=out.flatMap(p=>{
+      if(p.race) return [p];
+      const o=off(p);
+      if(o===0) return []; // la course remplace les séances du jour
+      if(o<0&&o>=-pre){
+        if(o===-1){ if(r.prio!=="C") return []; return isHardP(p)||isLongP(p)?[ed(p,{title:easyTitle(p.sport,r5(Math.min(p.dur,40))),dur:r5(Math.min(p.dur,40)),int:"facile",zone:p.sport==="renfo"?null:"1-2"})]:[p]; }
+        if(dur>=60&&o>=-3&&isLongP(p)&&(p.sport===T.s||T.s==="autre")) return []; // la course tient lieu de sortie longue
+        if(p.sport==="renfo"&&o>=-2) return [];
+        if(isHardP(p)) return [ed(p,{title:t(`${SPORTS[p.sport].l} — rappel : 4 × 2 min allure course`,`${SPORTS[p.sport].l} — sharpener: 4 × 2 min at race pace`),dur:r5(Math.min(p.dur*.6,45)),int:"modere",zone:p.sport==="renfo"?null:"2+4"})];
+        if(isLongP(p)){ const d=r5(p.dur*.6); return [ed(p,{title:easyTitle(p.sport,d),dur:d,int:"facile"})]; }
+        if(r.prio==="A"){ const d=r5(p.dur*.75); return [ed(p,{dur:d})]; }
+        return [p];
+      }
+      if(o>0&&o<=rec){
+        if(o===1&&rec>=4) return [];
+        if(p.sport==="renfo"&&o<=Math.min(3,rec)) return [];
+        if(o===1) return isHardP(p)||isLongP(p)||p.dur>30?[ed(p,{title:t("Récup : ","Recovery: ")+easyTitle(p.sport,30),dur:30,int:"facile",zone:p.sport==="renfo"?null:"1-2"})]:[p];
+        if(isHardP(p)||isLongP(p)){ const d=r5(p.dur*.7); return [ed(p,{title:easyTitle(p.sport,d),dur:d,int:"facile",zone:p.sport==="renfo"?null:"1-2"})]; }
+        if(rec>=8&&o<=rec/2){ const d=r5(p.dur*.7); return [ed(p,{dur:d})]; }
+        return [p];
+      }
+      return [p];
+    });
+    if(add){
+      const R=(o,sport,title,d,int,zone,notes,time)=>out.push({date:dayKey(addDays(rd,o)),time:time||S.set.defTime||"18:00",sport,title,dur:d,int,zone,notes,race:r.id,gen:false});
+      R(0,T.s,`🏁 ${nm}`,dur,"intense",null,t(`Compétition (${raceTypeName(r.type)}, priorité ${r.prio}). Échauffement 10–15 min + quelques accélérations, départ prudent, mange et bois comme à l'entraînement.`,`Race (${raceTypeName(r.type)}, priority ${r.prio}). Warm up 10–15 min + a few strides, start conservatively, fuel as in training.`),r.time||"09:00");
+      if(r.prio!=="C") R(-1,T.s==="autre"?"course":T.s,t("Activation veille de course : 20 min + 3 accélérations","Pre-race opener: 20 min + 3 accelerations"),20,"facile","1-2",t(`Veille de ${nm} : court et facile. Prépare tes affaires.`,`Day before ${nm}: short and easy. Get your kit ready.`));
+      if(standalone&&rec>=2) R(rec>=4?2:1,T.s==="velo"?"natation":"velo",t("Récupération active 30 min très facile","Active recovery 30 min very easy"),30,"facile","1",t(`Après ${nm} : faire tourner les jambes sans forcer. Reprise des séances intenses dans ${rec} jours.`,`After ${nm}: spin the legs gently. Hard sessions resume in ${rec} days.`));
+    }
+  }
+  return out;
+}
+function racesCtx(){
+  const tk=dayKey(today0()), L=raceList().filter(r=>r.date>=tk);
+  return L.length?`Compétitions prévues : ${L.map(r=>`${raceName(r)} (${raceTypeName(r.type)}) le ${r.date}, priorité ${r.prio}, ≈ ${hm(r.dur)}`).join(" ; ")}.\n`:"";
+}
+/* resynchronise le planning après ajout / modification / suppression d'une compétition */
+async function raceSync(adaptManual){
+  const tk=dayKey(today0());
+  if(curProg()) await progLoad("mine",curProg(),true);
+  else {
+    const n={}, want=applyRaces([],{add:true,standalone:true}).filter(p=>p.date>=tk).map(p=>{ const k=`${p.date}-${p.sport}`; n[k]=(n[k]||0)+1; return {...p,id:`race-${p.race}-${k}-${n[k]}`}; });
+    const ids=new Set(want.map(p=>p.id));
+    for(const p of S.plans.filter(p=>p.race&&!p.prog&&p.date>=tk&&!ids.has(p.id))) await delPlan(p.id);
+    for(const p of want) await putPlan(p);
+  }
+  // séances proposées automatiquement (et, si demandé, celles ajoutées à la main)
+  const pool=S.plans.filter(p=>p.date>=tk&&!p.prog&&!p.race&&!String(p.id).startsWith("dp")&&(p.gen||adaptManual));
+  const adj=applyRaces(pool,{add:false}), keep=new Map(adj.map(p=>[p.id,p]));
+  let changed=0;
+  for(const p of pool){ const q=keep.get(p.id); if(!q){ await delPlan(p.id); changed++; } else if(q.dur!==p.dur||q.title!==p.title||q.int!==p.int){ await putPlan(q); changed++; } }
+  const left=adaptManual?0:raceManualHits().length;
+  render(); return {changed,left};
+}
+/* séances manuelles qui tombent dans la fenêtre d'une compétition et seraient modifiées */
+function raceManualHits(){
+  const tk=dayKey(today0()), pool=S.plans.filter(p=>p.date>=tk&&!p.prog&&!p.race&&!p.gen&&!String(p.id).startsWith("dp"));
+  const adj=new Map(applyRaces(pool,{add:false}).map(p=>[p.id,p]));
+  return pool.filter(p=>{ const q=adj.get(p.id); return !q||q.dur!==p.dur||q.title!==p.title; });
+}
+function openRace(r){
+  const isNew=!r; r=r||{id:"r"+uid(),date:dayKey(addDays(today0(),28)),type:"run_10k",name:"",dur:RACE_TYPES.run_10k.dur,prio:"B",time:"09:00"};
+  S.editingRace={...r};
+  sheet(`<h2>${isNew?t("Ajouter une compétition","Add a race"):t("Compétition","Race")}</h2>
+  <form id="race-form" class="stack"><div class="fields">
+    <div class="f full"><label for="r-name">${t("Nom","Name")}</label><input id="r-name" maxlength="60" value="${esc(r.name||"")}" placeholder="${t("ex. 10 km de Boulogne","e.g. Brighton 10K")}"></div>
+    <div class="f"><label for="r-type">Type</label><select id="r-type">${Object.keys(RACE_TYPES).map(k=>`<option value="${k}" ${k===r.type?"selected":""}>${raceTypeName(k)}</option>`).join("")}</select></div>
+    <div class="f"><label for="r-date">Date</label><input id="r-date" type="date" value="${r.date}" required></div>
+    <div class="f"><label for="r-time">${t("Heure de départ","Start time")}</label><input id="r-time" type="time" value="${r.time||"09:00"}"></div>
+    <div class="f"><label for="r-dur">${t("Durée estimée (min)","Estimated time (min)")}</label><input id="r-dur" type="number" min="10" max="1200" inputmode="numeric" value="${r.dur}"></div>
+    <div class="f full"><label for="r-prio">${t("Importance","Priority")}</label><select id="r-prio">${Object.entries(RACE_PRIO()).map(([k,l])=>`<option value="${k}" ${k===r.prio?"selected":""}>${l}</option>`).join("")}</select></div>
+  </div>
+  <p class="hint" id="r-effect" style="margin:0">${raceEffect(r)}</p>
+  <label class="check"><input type="checkbox" id="r-manual"> ${t("Adapter aussi mes séances ajoutées à la main","Also adapt the sessions I added by hand")}</label>
+  <div class="row between">${isNew?"<span></span>":`<button type="button" class="btn small ghost danger-ghost" id="race-del" data-id="${r.id}">🗑 ${t("Supprimer","Delete")}</button>`}<div class="row"><button type="button" class="btn ghost" data-close>${t("Annuler","Cancel")}</button><button class="btn" type="submit">${t("Enregistrer","Save")}</button></div></div>
+  </form>`);
+  $("#race-form").addEventListener("submit",async e=>{
+    e.preventDefault();
+    const x={...S.editingRace,name:$("#r-name").value.trim().slice(0,60),type:$("#r-type").value,date:$("#r-date").value,time:$("#r-time").value||"09:00",dur:Math.max(10,Math.min(1200,parseInt($("#r-dur").value)||RACE_TYPES[$("#r-type").value].dur)),prio:$("#r-prio").value};
+    if(!x.date) return;
+    const manual=$("#r-manual").checked;
+    S.set.races=[...(S.set.races||[]).filter(y=>y.id!==x.id),x]; saveSettings(); closeSheet();
+    try{ const {changed,left}=await raceSync(manual);
+      toast((t(`Compétition enregistrée : planning ajusté autour du ${fmtDate(parseDay(x.date))}`,`Race saved: plan adjusted around ${fmtDate(parseDay(x.date))}`)+(left?t(` — ${left} séance(s) manuelle(s) dans la fenêtre, non modifiée(s) (coche « Adapter aussi mes séances » pour les alléger).`,` — ${left} manual session(s) in the window left unchanged (tick “Also adapt” to lighten them).`):".")).replace(/\.\.$/,".").replace(/\. — /," — "));
+    }catch(err){ toast(t("Ajustement interrompu : réessaie.","Adjustment interrupted: try again.")); render(); }
+  });
+}
+function raceEffect(r){
+  const pre=racePre(r), rec=raceRecDays(r);
+  return r.prio==="C"?t(`La veille passe en facile, la course remplace les séances du jour, puis ${rec} jour(s) sans séance intense.`,`The day before becomes easy, the race replaces that day's sessions, then ${rec} day(s) without hard sessions.`)
+    :t(`${pre} jours allégés avant (séances dures raccourcies, activation la veille), la course remplace les séances du jour et la sortie longue proche, puis ${rec} jour(s) de récupération sans séance intense.`,`${pre} lighter days before (hard sessions shortened, opener the day before), the race replaces that day's sessions and the nearby long session, then ${rec} recovery day(s) without hard sessions.`);
+}
+function raceFormRefresh(changedId){
+  const x=S.editingRace; if(!x) return;
+  if(changedId==="r-type"){ const k=$("#r-type").value; if(+$("#r-dur").value===RACE_TYPES[x.type].dur) $("#r-dur").value=RACE_TYPES[k].dur; x.type=k; }
+  x.dur=parseInt($("#r-dur").value)||RACE_TYPES[x.type].dur; x.prio=$("#r-prio").value;
+  const el=$("#r-effect"); if(el) el.textContent=raceEffect(x);
+}
+async function raceDelete(id){
+  const r=(S.set.races||[]).find(x=>x.id===id);
+  S.set.races=(S.set.races||[]).filter(x=>x.id!==id); saveSettings(); closeSheet();
+  await raceSync(false);
+  toast(t(`Compétition supprimée${r?` (${raceName(r)})`:""} : planning remis à jour.`,`Race deleted${r?` (${raceName(r)})`:""}: plan updated.`));
+}
+function raceCard(compact){
+  const tk=dayKey(today0()), L=raceList().filter(r=>r.date>=tk);
+  if(compact){ const r=L[0]; if(!r) return ""; const n=Math.round((parseDay(r.date)-today0())/864e5);
+    return `<section class="card row between" style="gap:10px"><div class="stack" style="gap:2px;min-width:0"><b>🏁 ${esc(raceName(r))}</b><span class="hint">${fmtDate(parseDay(r.date))} · ${raceTypeName(r.type)} · ${t("priorité","priority")} ${r.prio}</span></div><span class="pill ${n<=7?"warn":"info"}">${n?`J-${n}`:t("Aujourd'hui","Today")}</span></section>`; }
+  return `<section class="card stack"><div class="row between"><h2>${t("Compétitions","Races")}</h2><button class="btn small" id="race-add">+ ${t("Ajouter","Add")}</button></div>
+    ${L.length?`<div class="mg-list">${L.map(r=>{ const n=Math.round((parseDay(r.date)-today0())/864e5); return `<div class="mg-row"><div class="stack" style="gap:2px;min-width:0"><b>🏁 ${esc(raceName(r))}</b><span class="hint">${fmtDate(parseDay(r.date))} · ${raceTypeName(r.type)} · ≈ ${hm(r.dur)} · ${t("priorité","priority")} ${r.prio} · J-${n}</span></div><button class="btn small ghost" data-race-edit="${r.id}">${t("Modifier","Edit")}</button></div>`; }).join("")}</div>`
+      :`<p class="hint" style="margin:0">${t("Ajoute une compétition prévue : le planning s'allège avant, la course remplace les séances du jour, et la récupération est prévue après.","Add a planned race: training gets lighter before, the race replaces that day's sessions, and recovery is planned after.")}</p>`}
+  </section>`;
+}
+
 /* ============ coach (bot) ============ */
 const CHAT_K="forma-chat";
 S.chat=(()=>{ try{ return JSON.parse(localStorage.getItem(CHAT_K)||"[]"); }catch(e){ return []; } })();
@@ -2045,7 +2212,7 @@ Date du jour : ${dayKey(td)} (${DAYS_L()[(td.getDay()+6)%7]}).
 Zones cardio (FC max ${S.set.hrMax}${S.set.hrAuto!==false?" détectée automatiquement":""}) : ${ZONES().map(z=>`Z${z.z} ${z.l} ${z.lo==null?"<"+(z.hi+1):z.lo+"–"+z.hi}`).join(", ")} bpm. Donne toujours la zone et la plage de FC cible quand tu proposes une séance.
 Profil : FC max ${S.set.hrMax}, FC repos ${S.set.hrRest}, objectif ${S.set.goalH} h/semaine, jour de repos ${DAYS_L()[S.set.restDay??0]}, objectif principal : ${S.set.goal||"non précisé"}.
 Séances par semaine souhaitées : ${Object.entries(S.set.targets||{}).map(([k,v])=>`${SPORTS[k].l} ${v}`).join(", ")||"automatique"}.
-${S.set.context?`Contexte et programme de l'athlète (prioritaires : tes conseils doivent les respecter) :\n${S.set.context}\n`:""}${progInfo()?`Position dans le programme « ${progInfo().name} » : semaine ${progInfo().w}/${progInfo().n}, phase ${progInfo().phase}, ${progInfo().sumFr}, J-${progInfo().days} avant la course.\n`:""}Indicateurs : forme CTL ${m.ctl.toFixed(0)}, fatigue ATL ${m.atl.toFixed(0)}, fraîcheur TSB ${m.tsb.toFixed(0)}, ratio aigu/chronique ${m.acwr!=null?m.acwr.toFixed(2):"n/d"}, état « ${W.st.l} », historique ${m.histDays} jours.
+${S.set.context?`Contexte et programme de l'athlète (prioritaires : tes conseils doivent les respecter) :\n${S.set.context}\n`:""}${racesCtx()}${progInfo()?`Position dans le programme « ${progInfo().name} » : semaine ${progInfo().w}/${progInfo().n}, phase ${progInfo().phase}, ${progInfo().sumFr}, J-${progInfo().days} avant la course.\n`:""}Indicateurs : forme CTL ${m.ctl.toFixed(0)}, fatigue ATL ${m.atl.toFixed(0)}, fraîcheur TSB ${m.tsb.toFixed(0)}, ratio aigu/chronique ${m.acwr!=null?m.acwr.toFixed(2):"n/d"}, état « ${W.st.l} », historique ${m.histDays} jours.
 Bilan de la semaine (calculé par l'app) : ${W.verdict} ${W.lines.join(" ")}
 Dernière séance (calculée par l'app) : ${A?`${A.a.date.slice(0,10)} ${SPORTS[A.a.sport].l} « ${A.a.title} ». ${A.verdict} ${A.lines.join(" ")} ${A.next}`:"aucune"}
 14 dernières séances :
@@ -2385,6 +2552,7 @@ function viewDash(){
     <div class="kpi"><span class="label">${t("Fraîcheur (TSB)","Freshness (TSB)")}</span><span class="v">${m.tsb>0?"+":""}${Math.round(m.tsb)}</span><span class="pill ${tc}">${tl}</span></div>
   </div>
   ${progCard()}
+  ${raceCard(true)}
   ${bilanHtml(acts,plans)}
   <div class="grid g2">
     <section class="card stack" aria-labelledby="h-adv">
@@ -2454,6 +2622,7 @@ function viewPlan(){
     </div>
     <p class="hint" style="margin:0">${t(`« Proposer ma semaine » répartit tes sports selon tes 4 dernières semaines, avec un jour de repos (${DAYS_L()[S.set.restDay??0]}), une séance intense par sport d'endurance et la sortie longue le week-end. La charge baisse automatiquement si tu es fatigué.`,`“Suggest my week” spreads your sports based on your last 4 weeks, with a rest day (${DAYS_L()[S.set.restDay??0]}), one hard session per endurance sport and the long session at the weekend. Load drops automatically when you're fatigued.`)}</p>
     ${(()=>{ const I=progInfo(addDays(mon,3)); return I?`<div class="banner"><span><b>${esc(I.name)} — ${t(`semaine ${I.w}/${I.n} · ${I.phase}`,`week ${I.w}/${I.n} · ${I.phase}`)}</b> ${I.sum}${I.key?` · ${t("séance clé","key session")} : ${esc(I.key)}`:""}</span></div>`:""; })()}
+    ${raceCard()}
     ${S.sel?`<p class="hint" style="margin:0">${t("Touche les séances à sélectionner, puis choisis une action en bas de l'écran.","Tap sessions to select them, then pick an action at the bottom of the screen.")}</p>`:""}
     <div class="days">${cols}</div>
     ${selBar()}
@@ -2747,7 +2916,7 @@ async function runAI(){
 Date du jour : ${dayKey(td)}.
 Zones cardio : ${ZONES().map(z=>`Z${z.z} ${z.lo==null?"<"+(z.hi+1):z.lo+"–"+z.hi}`).join(", ")} bpm.
 Athlète : FC max ${S.set.hrMax}, FC repos ${S.set.hrRest}, objectif ${S.set.goalH} h/semaine. Objectif principal : ${S.set.goal||"non précisé"}.
-${S.set.context?`Contexte et programme de l'athlète (prioritaires) :\n${S.set.context}\n`:""}${progInfo()?`Position dans le programme « ${progInfo().name} » : semaine ${progInfo().w}/${progInfo().n}, phase ${progInfo().phase}, J-${progInfo().days} avant la course.\n`:""}Indicateurs : forme CTL ${m.ctl.toFixed(0)}, fatigue ATL ${m.atl.toFixed(0)}, fraîcheur TSB ${m.tsb.toFixed(0)}, ratio charge aiguë/chronique ${m.acwr?m.acwr.toFixed(2):"n/d"}, historique ${m.histDays} jours.
+${S.set.context?`Contexte et programme de l'athlète (prioritaires) :\n${S.set.context}\n`:""}${racesCtx()}${progInfo()?`Position dans le programme « ${progInfo().name} » : semaine ${progInfo().w}/${progInfo().n}, phase ${progInfo().phase}, J-${progInfo().days} avant la course.\n`:""}Indicateurs : forme CTL ${m.ctl.toFixed(0)}, fatigue ATL ${m.atl.toFixed(0)}, fraîcheur TSB ${m.tsb.toFixed(0)}, ratio charge aiguë/chronique ${m.acwr?m.acwr.toFixed(2):"n/d"}, historique ${m.histDays} jours.
 Volume des 6 dernières semaines :
 ${weeks.join("\n")}
 12 dernières séances :
@@ -2781,6 +2950,7 @@ document.addEventListener("click",async e=>{
   if(el.dataset.selPlan){ const id=el.dataset.selPlan; S.sel.has(id)?S.sel.delete(id):S.sel.add(id); render(); return; }
   if(el.dataset.mg){ const g=planGroups().find(x=>x[0]===el.dataset.mg); if(!g) return; if(g[0]==="future"&&!el.dataset.confirm){ el.dataset.confirm="1"; el.textContent=t(`Confirmer (${g[2].length})`,`Confirm (${g[2].length})`); el.classList.add("danger"); return; }
     closeSheet(); await delPlansUndoable(g[2],t(`${g[2].length} séance(s) supprimée(s) : ${g[1].toLowerCase()}.`,`${g[2].length} session(s) deleted: ${g[1].toLowerCase()}.`)); render(); return; }
+  if(el.dataset.raceEdit){ const r=(S.set.races||[]).find(x=>x.id===el.dataset.raceEdit); if(r) openRace(r); return; }
   if(el.dataset.wzTpl){ wizTpl(el.dataset.wzTpl); return; }
   if(el.dataset.wzEx){ const [k,d]=el.dataset.wzEx.split("|"); wizEx(k,+d); return; }
   if(el.dataset.wzGo!==undefined){ el.disabled=true; try{ await wizGo(); }catch(err){ toast(t("Chargement interrompu : réessaie.","Loading interrupted: try again.")); render(); } return; }
@@ -2837,6 +3007,8 @@ document.addEventListener("click",async e=>{
       closeSheet(); await delPlansUndoable(list,t(`${list.length} séance(s) supprimée(s) du ${fmtDate(parseDay(a))} au ${fmtDate(parseDay(b))}.`,`${list.length} session(s) deleted from ${fmtDate(parseDay(a))} to ${fmtDate(parseDay(b))}.`)); render(); break; }
     case "gen-week": el.disabled=true; await genWeek(S.weekOff); el.disabled=false; break;
     case "prog-pick": openProgWizard(true); break;
+    case "race-add": openRace(null); break;
+    case "race-del": if(!el.dataset.confirm){ el.dataset.confirm="1"; el.textContent=t("Confirmer la suppression","Confirm delete"); break; } el.disabled=true; try{ await raceDelete(el.dataset.id); }catch(err){ toast(t("Suppression interrompue : réessaie.","Delete interrupted: try again.")); render(); } break;
     case "prog-new": S.wiz=tplDefaults(); openProgWizard(); break;
     case "prog-load-legacy": closeSheet(); try{ await progLoad(undefined,legacyProg()); }catch(err){ toast(t("Chargement interrompu : réessaie.","Loading interrupted: try again.")); } render(); break;
     case "prog-load": el.disabled=true; el.textContent=t("Chargement…","Loading…"); try{ await progLoad(undefined,curProg()||legacyProg()); }catch(err){ toast(t("Chargement interrompu : réessaie.","Loading interrupted: try again.")); } render(); break;
@@ -2854,6 +3026,8 @@ document.addEventListener("click",async e=>{
 });
 document.addEventListener("change",e=>{
   const id=e.target.id; const v=e.target.value;
+  if(id==="r-type"||id==="r-dur"||id==="r-prio"){ raceFormRefresh(id); return; }
+  if(id==="r-name"||id==="r-date"||id==="r-time"||id==="r-manual") return;
   if(id&&id.startsWith("wz-")){ wizChange(id,v,e.target); return; }
   if(id==="file-in"){ importFiles([...e.target.files]); e.target.value=""; return; }
   if(id==="evo-sport"){ S.evoSport=v; render(); return; }
