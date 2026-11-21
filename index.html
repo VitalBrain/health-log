@@ -2503,6 +2503,14 @@ function maybeKofi(){
 function render(){
   if(!S.actsReady && !S.timedOut) return;
   applyAutoHr();
+  // ajout unique du triathlon court du 6 décembre 2026 dans les compétitions
+  if(!S.set.raceSeedTri6&&!isDemo()&&(S.mode!=="db"||S.plansSynced)&&!S.progLoading){
+    S.set.raceSeedTri6=1;
+    if(dayKey(today0())<="2026-12-06"&&!(S.set.races||[]).some(r=>r&&r.date==="2026-12-06")){
+      S.set.races=[...(S.set.races||[]),{id:"r-tri-6dec",name:"Triathlon court (400 m / 10 km / 2,5 km)",type:"tri_s",date:"2026-12-06",time:"09:00",dur:45,prio:"B"}];
+      saveSettings(); setTimeout(()=>raceSync(false).catch(()=>{}),0);
+    } else saveSettings();
+  }
   if(S.set.prog===PROG_ID&&S.set.progV!==PROG_V&&!isDemo()&&!S.progMigrating&&(S.mode!=="db"||S.plansSynced)){ S.progMigrating=true; S.set.progV=PROG_V; progLoad("mine").catch(()=>{S.set.progV=null;}).finally(()=>{S.progMigrating=false;}); }
   $("#today-line").textContent = `${DAYS_L()[(today0().getDay()+6)%7]} ${fmtDate(today0())} · ${t("semaine","week")} ${isoWeek(today0())}`;
   $("#demo-banner").innerHTML = isDemo() ? `<div class="banner"><span><b>${t("Données d'exemple.","Sample data.")}</b> ${t("Importe ton export Garmin ou connecte Strava pour voir tes propres séances.","Import your Garmin export or connect Strava to see your own sessions.")}</span><button class="btn small" data-go="acts">${t("Importer","Import")}</button></div>` : "";
